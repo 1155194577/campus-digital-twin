@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { ArrowUp } from "lucide-react";
+import { useId } from "react";
 import type { Campus, Feature, Layers, Point } from "@/lib/types";
 import hkstpPrint from "@/public/data/hkstp-print.webp";
 import cuhkPrint from "@/public/data/cuhk-print.webp";
@@ -15,6 +16,7 @@ const drawOrder = ["park", "water", "road", "building"] as const;
 export default function PrintComparison({ campus, layers, selected }: {
   campus: Campus; layers: Layers; selected: Feature | null;
 }) {
+  const clipId = useId();
   const reference = references[campus.id as keyof typeof references];
   if (!reference) return null;
   const [west, south, east, north] = reference.bounds;
@@ -37,18 +39,21 @@ export default function PrintComparison({ campus, layers, selected }: {
       <figure>
         <figcaption>Campus map</figcaption>
         <svg role="img" aria-label={`${campus.name} map cropped to the print extent`} viewBox={`${x} ${y} ${width} ${height}`}>
-          <rect x={x} y={y} width={width} height={height} fill="#eff0e5"/>
-          {drawOrder.map(kind => layers[kind] && <g key={kind}>
-            {campus.features.filter(feature => feature.kind === kind && intersectsPrint(feature.points)).map(feature =>
-              feature.kind === "road"
-                ? <polyline key={feature.id} points={pointsAttr(feature.points)} fill="none" stroke={["footway", "path"].includes(feature.category) ? "#a1a393" : "#b0a98e"} strokeWidth={["footway", "path"].includes(feature.category) ? 2 : 5}/>
-                : <polygon key={feature.id} points={pointsAttr(feature.points)} fill={fills[feature.kind]}/>
+          <defs><clipPath id={clipId}><rect x={x} y={y} width={width} height={height}/></clipPath></defs>
+          <g clipPath={`url(#${clipId})`}>
+            <rect x={x} y={y} width={width} height={height} fill="#eff0e5"/>
+            {drawOrder.map(kind => layers[kind] && <g key={kind}>
+              {campus.features.filter(feature => feature.kind === kind && intersectsPrint(feature.points)).map(feature =>
+                feature.kind === "road"
+                  ? <polyline key={feature.id} points={pointsAttr(feature.points)} fill="none" stroke={["footway", "path"].includes(feature.category) ? "#a1a393" : "#b0a98e"} strokeWidth={["footway", "path"].includes(feature.category) ? 2 : 5}/>
+                  : <polygon key={feature.id} points={pointsAttr(feature.points)} fill={fills[feature.kind]}/>
+              )}
+            </g>)}
+            {layers.water && campus.coastline?.map(points =>
+              <polyline key={pointsAttr(points)} points={pointsAttr(points)} fill="none" stroke="#458ea5" strokeWidth={4}/>
             )}
-          </g>)}
-          {layers.water && campus.coastline?.map(points =>
-            <polyline key={pointsAttr(points)} points={pointsAttr(points)} fill="none" stroke="#458ea5" strokeWidth={4}/>
-          )}
-          {selected && layers.building && <polygon points={pointsAttr(selected.points)} fill="#286ace" stroke="#174b91" strokeWidth={3}/>}
+            {selected && layers.building && intersectsPrint(selected.points) && <polygon points={pointsAttr(selected.points)} fill="#286ace" stroke="#174b91" strokeWidth={3}/>}
+          </g>
         </svg>
       </figure>
       <figure>
