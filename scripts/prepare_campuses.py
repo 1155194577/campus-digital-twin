@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 
 CAMPUSES = [
     ("hkstp", "Hong Kong Science Park", "Pak Shek Kok · Innovation by the waterfront", (114.205, 22.421, 114.216, 22.431)),
-    ("cuhk", "The Chinese University of Hong Kong", "Ma Liu Shui · A campus on the hillside", (114.198, 22.410, 114.214, 22.424)),
+    ("cuhk", "The Chinese University of Hong Kong", "Ma Liu Shui · A campus on the hillside", (114.198, 22.410, 114.21515, 22.42845)),
 ]
 
 
@@ -43,6 +43,14 @@ def convert(path, spec):
     ways = {w.attrib["id"]: w for w in root.findall("way")}
     cx, cy = (bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2
     factor = 111320 * math.cos(math.radians(cy))
+    def project(lon, lat):
+        return [round((lon - cx) * factor, 2), round((cy - lat) * 111320, 2)]
+
+    coastline = [
+        [project(*nodes[ref]) for nd in way.findall("nd") if (ref := nd.attrib["ref"]) in nodes]
+        for way in ways.values()
+        if way.find('./tag[@k="natural"][@v="coastline"]') is not None
+    ]
     features = []
     consumed = set()
 
@@ -64,7 +72,7 @@ def convert(path, spec):
             kind = "road"
         if not kind or kind != "road" and (len(coords) < 4 or coords[0] != coords[-1]):
             return
-        points = [[round((x - cx) * factor, 2), round(-(y - cy) * 111320, 2)] for x, y in coords]
+        points = [project(x, y) for x, y in coords]
         try:
             height = float(tags.get("height", "").replace(" m", ""))
             estimated = False
@@ -120,7 +128,7 @@ def convert(path, spec):
     buildings = [f for f in features if f["kind"] == "building"]
     print(ident, name, len(features), "features;", len(buildings), "buildings")
     from datetime import datetime, timezone
-    return dict(id=spec[0], name=name, subtitle=subtitle, center=[cy,cx], width=round((bounds[2]-bounds[0])*factor), depth=round((bounds[3]-bounds[1])*111320), fetchedAt=datetime.now(timezone.utc).isoformat(), features=features, walkDetails=walk_details)
+    return dict(id=spec[0], name=name, subtitle=subtitle, center=[cy,cx], width=round((bounds[2]-bounds[0])*factor), depth=round((bounds[3]-bounds[1])*111320), fetchedAt=datetime.now(timezone.utc).isoformat(), coastline=coastline, features=features, walkDetails=walk_details)
 
 
 if __name__ == "__main__":

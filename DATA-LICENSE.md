@@ -9,3 +9,5 @@ The derived geographic snapshots in `public/data/hkstp.json` and `public/data/cu
 - Original map API: https://api.openstreetmap.org/api/0.6/map
 
 The included conversion script records each snapshot retrieval time in `fetchedAt` and preserves OSM feature identifiers. Inferred building heights and local projected coordinates are derived transformations, not surveyed measurements.
+
+The tactile reference images in `public/data/*-print.webp` also derive from OpenStreetMap, via Touch Mapper. The attribution above applies to both comparison panels.
