@@ -54,7 +54,6 @@ dialog.modal-backdrop::backdrop{background:#1c302b66;backdrop-filter:blur(5px)}
 .map-place-marker[hidden]{display:none}
 .map-place-marker::after{content:"";position:absolute;left:calc(50% - 2px);bottom:-6px;width:4px;height:4px;border-radius:50%;background:#203a61}
 .map-place-marker[aria-pressed=true]{border-color:#2759b0;background:#edf3ff;color:#1b4ba6}
-.exit-marker{z-index:3}
 .viewer:has(.print-comparison){container-type:inline-size}
 .campus-map-view{position:absolute;inset:0}
 .print-comparison{position:absolute;inset:0;overflow:auto;display:grid;grid-template-rows:auto minmax(160px,1fr) auto;gap:16px;padding:20px;background:#f6f8f5}
