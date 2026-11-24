@@ -8,13 +8,42 @@ import { partColors } from "@/lib/types";
 import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 import { createMapClickGesture } from "@/lib/map-click-gesture";
 
+type CameraPose = { position: THREE.Vector3; target: THREE.Vector3 };
+
 type SceneState = {
   scene: THREE.Scene; camera: THREE.PerspectiveCamera; renderer: THREE.WebGLRenderer;
   controls: OrbitControls; groups: Record<keyof Layers, THREE.Group>; buildings: THREE.Mesh[];
   model: THREE.Group; span: number; focus?: THREE.Vector3; initial: THREE.Vector3; invalidate: () => void;
   route: THREE.Group;
   setActive: (active: boolean) => void;
+  view: ViewMode; perspectivePose?: CameraPose; topFrame?: CameraPose; campusBounds: THREE.Box3; modelBounds?: THREE.Box3;
+  topSelectionTarget?: THREE.Vector3;
 };
+
+function getCameraPose(s: SceneState): CameraPose {
+  return { position: s.camera.position.clone(), target: s.controls.target.clone() };
+}
+
+function isAtTopFrame(s: SceneState) {
+  const frame = s.topFrame;
+  return frame && frame.position.distanceToSquared(s.camera.position) < 1e-6 && frame.target.distanceToSquared(s.controls.target) < 1e-6;
+}
+
+function fitTopView(s: SceneState) {
+  const bounds = s.modelBounds ?? s.campusBounds;
+  const size = bounds.getSize(new THREE.Vector3());
+  const halfFov = THREE.MathUtils.degToRad(s.camera.getEffectiveFOV() / 2);
+  const distance = size.y / 2 + Math.max(size.x / s.camera.aspect, size.z) * 1.15 / (2 * Math.tan(halfFov));
+  s.controls.maxDistance = Math.max(s.span * 3.2, distance * 1.3);
+  s.camera.far = Math.max(s.span * 14, s.controls.maxDistance + size.y);
+  s.camera.updateProjectionMatrix();
+  bounds.getCenter(s.controls.target);
+  s.camera.position.copy(s.controls.target).add(new THREE.Vector3(0, Math.max(s.controls.minDistance, distance), .01));
+  s.focus = undefined;
+  s.controls.update();
+  s.topFrame = getCameraPose(s);
+  s.invalidate();
+}
 
 function disposeObject(object: THREE.Object3D) {
   object.traverse(child => {
@@ -53,7 +82,7 @@ function endpointMarker(point: Point, label: string, color: string, size: number
 }
 
 // STL files are Z-up by convention (slicers, 3d-print, py-touch-mapper); glTF is Y-up.
-function fitModel(s: SceneState, upAxis: UpAxis, view: ViewMode): ModelInfo | null {
+function fitModel(s: SceneState, upAxis: UpAxis): ModelInfo | null {
   const pivot = s.model.children[0];
   if (!pivot) return null;
   pivot.position.set(0, 0, 0); pivot.scale.setScalar(1);
@@ -67,10 +96,14 @@ function fitModel(s: SceneState, upAxis: UpAxis, view: ViewMode): ModelInfo | nu
   pivot.scale.setScalar(s.span * .55 / maxSize);
   box = new THREE.Box3().setFromObject(pivot);
   const center = box.getCenter(new THREE.Vector3());
-  pivot.position.sub(new THREE.Vector3(center.x, box.min.y, center.z));
+  const offset = new THREE.Vector3(-center.x, -box.min.y, -center.z);
+  pivot.position.add(offset);
+  s.modelBounds = box.translate(offset);
   s.controls.target.set(0, (box.max.y - box.min.y) / 2, 0); s.camera.position.copy(s.initial); s.focus = undefined;
-  if (view === "top") { const distance = s.camera.position.distanceTo(s.controls.target); s.camera.position.copy(s.controls.target).add(new THREE.Vector3(0, distance, .01)); }
-  s.controls.update(); s.invalidate();
+  if (s.view === "top") {
+    s.perspectivePose = getCameraPose(s);
+    fitTopView(s);
+  } else { s.controls.update(); s.invalidate(); }
   let triangles = 0;
   pivot.traverse(child => { if (child instanceof THREE.Mesh) { const g = child.geometry as THREE.BufferGeometry; triangles += (g.index?.count ?? g.getAttribute("position")?.count ?? 0) / 3 * (child instanceof THREE.InstancedMesh ? child.count : 1); } });
   return { parts: pivot.children.length, triangles: Math.round(triangles), size: [size.x, size.z, size.y].map(v => v < maxSize * 1e-9 ? 0 : v) as ModelInfo["size"] };
@@ -87,7 +120,6 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
   const lastAction = useRef<ViewerAction | null>(null);
   const callbacks = useRef({ onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo, onHeadingChange });
   const upAxisRef = useRef(upAxis);
-  const viewRef = useRef(view);
   useEffect(() => { callbacks.current = { onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo, onHeadingChange }; }, [onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo, onHeadingChange]);
 
   useEffect(() => {
@@ -137,6 +169,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     Object.values(groups).forEach(group => scene.add(group));
     const ground = new THREE.Mesh(new THREE.BoxGeometry(campus.width, 8, campus.depth), new THREE.MeshStandardMaterial({ color: "#dce8dc", roughness: 1 }));
     ground.position.y = -5; scene.add(ground);
+    const campusBounds = new THREE.Box3().setFromObject(ground);
     const groundEdge = new THREE.LineSegments(new THREE.EdgesGeometry(ground.geometry), new THREE.LineBasicMaterial({ color: "#bed0c7", transparent: true, opacity: .6 }));
     groundEdge.position.copy(ground.position); scene.add(groundEdge);
     const buildings: THREE.Mesh[] = [];
@@ -146,6 +179,12 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     for (const feature of campus.features) {
       const points = feature.points;
       if (points.length < 2) continue;
+      for (const [x, z] of points) {
+        campusBounds.min.x = Math.min(campusBounds.min.x, x);
+        campusBounds.max.x = Math.max(campusBounds.max.x, x);
+        campusBounds.min.z = Math.min(campusBounds.min.z, z);
+        campusBounds.max.z = Math.max(campusBounds.max.z, z);
+      }
       if (feature.kind === "road") {
         const color = feature.category === "footway" || feature.category === "path" ? "#fefcf4" : "#bdc8c7";
         const positions = new Float32Array((points.length - 1) * 6);
@@ -168,6 +207,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
       const color = feature.name ? "#d3dce0" : "#e1e6e4";
       const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: .85, metalness: .02 }));
       mesh.position.y = 1;
+      campusBounds.max.y = Math.max(campusBounds.max.y, height + mesh.position.y);
       mesh.userData = { feature, baseColor: color };
       groups[feature.kind].add(mesh);
       buildings.push(mesh);
@@ -207,7 +247,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
         frame = undefined;
       }
     };
-    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial, invalidate, setActive };
+    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial, invalidate, setActive, view: "perspective", campusBounds };
     function render() {
       if (sceneState.focus) {
         const delta = sceneState.focus.clone().sub(controls.target).multiplyScalar(.12);
@@ -227,11 +267,20 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     }
     state.current = sceneState;
     controls.addEventListener("change", invalidate);
-    const resize = () => { const { width, height } = host.getBoundingClientRect(); if (!width || !height) return; renderer.setSize(width,height); camera.aspect = width/height; camera.updateProjectionMatrix(); invalidate(); };
+    const resize = () => {
+      const { width, height } = host.getBoundingClientRect();
+      if (!width || !height) return;
+      renderer.setSize(width,height);
+      const aspectChanged = camera.aspect !== width / height;
+      camera.aspect = width / height;
+      if (sceneState.view === "top" && aspectChanged && isAtTopFrame(sceneState)) fitTopView(sceneState);
+      else { camera.updateProjectionMatrix(); invalidate(); }
+    };
     const observer = new ResizeObserver(resize); observer.observe(host); resize();
     const raycaster = new THREE.Raycaster();
     const gesture = createMapClickGesture();
     const move = (event: PointerEvent) => {
+      gesture.move(event);
       if (!event.buttons && event.pointerType !== "touch") return;
       framesToSettle = dampingFrames;
       schedule();
@@ -273,25 +322,48 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
   }, [layers, campus, modelFiles]);
   useEffect(() => {
     const s = state.current; if(!s)return;
+    let selectedMesh: THREE.Mesh | undefined;
     for(const mesh of s.buildings) {
+      const isSelected = mesh.userData.feature.id === selected;
+      if (isSelected) selectedMesh = mesh;
       const material=mesh.material as THREE.MeshStandardMaterial;
-      material.color.set(mesh.userData.feature.id===selected ? "#317cff" : mesh.userData.baseColor);
-      material.emissive.set(mesh.userData.feature.id===selected ? "#092649" : "#000000");
+      material.color.set(isSelected ? "#317cff" : mesh.userData.baseColor);
+      material.emissive.set(isSelected ? "#092649" : "#000000");
     }
-    if(selected) {
-      const feature=campus.features.find(f=>f.id===selected);
-      if(feature) s.focus=new THREE.Vector3(feature.points.reduce((a,p)=>a+p[0],0)/feature.points.length,0,feature.points.reduce((a,p)=>a+p[1],0)/feature.points.length);
-    }
+    const feature=campus.features.find(f=>f.id===selected);
+    if(feature) s.focus=new THREE.Vector3(feature.points.reduce((a,p)=>a+p[0],0)/feature.points.length,0,feature.points.reduce((a,p)=>a+p[1],0)/feature.points.length);
+    if (s.view === "top") s.topSelectionTarget = selectedMesh ? new THREE.Box3().setFromObject(selectedMesh).getCenter(new THREE.Vector3()) : undefined;
     s.invalidate();
   }, [selected,campus]);
   useEffect(() => {
-    viewRef.current=view;
     const s=state.current; if(!s)return;
     const distance=s.camera.position.distanceTo(s.controls.target);
+    s.view = view;
     s.controls.enableRotate=view!=="top";
     s.controls.mouseButtons.LEFT=view==="top"?THREE.MOUSE.PAN:THREE.MOUSE.ROTATE;
     s.controls.touches.ONE=view==="top"?THREE.TOUCH.PAN:THREE.TOUCH.ROTATE;
-    s.camera.position.copy(s.controls.target).add(view==="top" ? new THREE.Vector3(0,distance,.01) : new THREE.Vector3(.5,.72,.65).normalize().multiplyScalar(distance));
+    if (view === "top") {
+      s.perspectivePose = getCameraPose(s);
+      s.topSelectionTarget = undefined;
+      fitTopView(s);
+      return;
+    }
+    s.controls.maxDistance = s.span * 3.2;
+    s.camera.far = s.span * 14;
+    s.camera.updateProjectionMatrix();
+    if (s.perspectivePose) {
+      const { position, target } = s.perspectivePose;
+      if (s.topSelectionTarget) {
+        s.controls.target.copy(s.topSelectionTarget);
+        s.camera.position.copy(position).sub(target).add(s.topSelectionTarget);
+        s.focus = undefined;
+      } else {
+        s.controls.target.copy(target);
+        s.camera.position.copy(position);
+      }
+      s.topSelectionTarget = undefined;
+      s.perspectivePose = undefined;
+    } else s.camera.position.copy(s.controls.target).add(new THREE.Vector3(.5,.72,.65).normalize().multiplyScalar(distance));
     s.controls.update();
     s.invalidate();
   },[view,campus]);
@@ -357,6 +429,9 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     const s=state.current; if(!s)return;
     let cancelled=false;
     s.model.clear();
+    const hadModel = Boolean(s.modelBounds);
+    s.modelBounds = undefined;
+    if (hadModel && s.view === "top") fitTopView(s);
     s.invalidate();
     if(!modelFiles.length){callbacks.current.onReady();return;}
     const load=async()=>{
@@ -383,7 +458,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
         }
         if(cancelled){disposeObject(pivot);return;}
         s.model.add(pivot);
-        const info=fitModel(s,upAxisRef.current,viewRef.current);
+        const info=fitModel(s,upAxisRef.current);
         if(!info) {disposeObject(s.model);s.model.clear();throw new Error("The model contains no usable geometry.");}
         callbacks.current.onModelInfo(info); callbacks.current.onReady();
       }catch{if(!cancelled){callbacks.current.onModelError();callbacks.current.onError("Could not open this model. Choose a valid STL or self-contained GLB file.");}}
@@ -391,6 +466,6 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     void load();
     return ()=>{cancelled=true;disposeObject(s.model);s.model.clear();};
   },[modelFiles,campus]);
-  useEffect(()=>{ upAxisRef.current=upAxis; const s=state.current; if(s?.model.children.length) callbacks.current.onModelInfo(fitModel(s,upAxis,viewRef.current)); },[upAxis]);
+  useEffect(()=>{ upAxisRef.current=upAxis; const s=state.current; if(s?.model.children.length) callbacks.current.onModelInfo(fitModel(s,upAxis)); },[upAxis]);
   return <div className="scene-canvas" ref={container}/>;
 }
