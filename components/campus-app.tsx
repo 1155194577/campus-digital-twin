@@ -16,7 +16,7 @@ const CampusScene = dynamic(async () => {
     return campus ? <Scene campus={campus} {...props}/> : null;
   };
 }, { ssr: false });
-const formatSize = (value: number) => value.toLocaleString("en-GB", { maximumFractionDigits: value < 100 ? 1 : 0 });
+const formatSize = (value: number) => value.toLocaleString("en-GB", value < 100 ? { maximumSignificantDigits: 3 } : { maximumFractionDigits: 0 });
 const initialCampusId = "hkstp";
 const campuses = [{id:"hkstp",short:"HKSTP",name:"Hong Kong Science Park",tag:"Science & innovation"},{id:"cuhk",short:"CUHK",name:"The Chinese University of Hong Kong",tag:"Education & research"}];
 const layerOptions = [{key:"building",name:"Buildings",icon:Building2,color:"#b7c7cd"},{key:"road",name:"Roads & pathways",icon:Map,color:"#c2c9c3"},{key:"park",name:"Green spaces",icon:Leaf,color:"#92b79d"},{key:"water",name:"Water bodies",icon:Waves,color:"#8abcc6"}] as const;
