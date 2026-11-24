@@ -1,4 +1,5 @@
 import type { Campus, Feature, Point } from "./types";
+import type { TransitPlace } from "./campus-places";
 
 export type Endpoint = { point: Point; featureId?: string };
 type Segment = { from: string; to: string; a: Point; b: Point; length: number; way: Feature };
@@ -35,8 +36,13 @@ export function featureEndpoint(feature: Feature): Endpoint {
   };
 }
 
-export function parseEndpoint(campus: Campus, value: string | null): Endpoint | null {
+export function parseEndpoint(campus: Campus, value: string | null, transitPlaces: readonly TransitPlace[] = []): Endpoint | null {
   if (!value) return null;
+  const [centerLat, centerLon] = campus.center;
+  const toLocal = (latitude: number, longitude: number): Point =>
+    [(longitude - centerLon) * longitudeScale(centerLat), (centerLat - latitude) * metersPerDegree];
+  const transit = campus.id === "cuhk" ? transitPlaces.find(place => place.id === value) : undefined;
+  if (transit) return { featureId: transit.id, point: toLocal(transit.lat, transit.lon) };
   const feature = campus.features.find(f => f.id === value);
   if (feature) return featureEndpoint(feature);
   if (!value.startsWith("pt:")) return null;
@@ -44,8 +50,7 @@ export function parseEndpoint(campus: Campus, value: string | null): Endpoint | 
   if (coordinates.length !== 2 || coordinates.some(p => !p.trim())) return null;
   const [latitude, longitude] = coordinates.map(Number);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
-  const [centerLat, centerLon] = campus.center;
-  const point: Point = [(longitude - centerLon) * longitudeScale(centerLat), (centerLat - latitude) * metersPerDegree];
+  const point = toLocal(latitude, longitude);
   if (Math.abs(point[0]) > campus.width / 2 || Math.abs(point[1]) > campus.depth / 2) return null;
   return { point };
 }

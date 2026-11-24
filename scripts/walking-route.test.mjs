@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { projectPlace, searchPlaces, universityExits, universityStation } from "../lib/campus-places.ts";
 import { buildWalkingGraph, featureEndpoint, findWalkingRoute, formatEndpoint, parseEndpoint } from "../lib/walking-route.ts";
 
 const road = (id, points, walkNodes, category = "footway", extra = {}) =>
@@ -99,4 +100,26 @@ test("reprojects the same shared map point when the campus center changes", () =
   const endpoint = parseEndpoint(refreshed, key);
   assert.ok(Math.hypot(endpoint.point[0] - 341.7, endpoint.point[1] - 612.88) < 0.08);
   assert.equal(formatEndpoint(refreshed, endpoint), key);
+});
+
+test("uses the searched CUHK station and all exits as shareable route endpoints", () => {
+  const campus = JSON.parse(readFileSync(new URL("../public/data/cuhk.json", import.meta.url), "utf8"));
+  const transit = [universityStation, ...universityExits];
+  for (const [query, place] of [["MTR", universityStation], ...universityExits.map(exit => [`Exit ${exit.exit}`, exit])]) {
+    assert.equal(searchPlaces(transit, campus.id, query)[0]?.id, place.id);
+    const expected = { featureId: place.id, point: projectPlace(place, campus.center) };
+    for (const key of ["start", "destination"]) {
+      const params = new URLSearchParams({ campus: campus.id, [key]: formatEndpoint(campus, expected) });
+      const reopened = new URLSearchParams(params.toString());
+      const actual = parseEndpoint(campus, reopened.get(key), transit);
+      assert.equal(actual?.featureId, place.id);
+      assert.ok(Math.hypot(...actual.point.map((value, i) => value - expected.point[i])) < 1e-9);
+    }
+    assert.equal(parseEndpoint({ ...campus, id: "hkstp", features: [] }, place.id, transit), null);
+  }
+
+  const start = parseEndpoint(campus, universityExits[0].id, transit);
+  const library = parseEndpoint(campus, "way/134410449", transit);
+  const result = findWalkingRoute(buildWalkingGraph(campus), campus.walkDetails, start.point, library.point);
+  assert.ok(result?.length > 0);
 });
