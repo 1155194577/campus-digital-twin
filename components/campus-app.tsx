@@ -4,8 +4,9 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { preload } from "react-dom";
-import { ArrowDownToLine, ArrowUpRight, Box, Building2, Check, ChevronDown, ChevronRight, Compass, Crosshair, Expand, FileBox, Info, Layers3, Leaf, LoaderCircle, Map, MapPin, Minus, MousePointer2, Move3D, Plus, RotateCcw, Search, SlidersHorizontal, Upload, Waves, X } from "lucide-react";
+import { ArrowDownToLine, ArrowUpRight, Box, Building2, Check, ChevronDown, ChevronRight, Crosshair, Expand, FileBox, Info, Layers3, Leaf, LoaderCircle, Map, MapPin, Minus, MousePointer2, Move3D, Plus, RotateCcw, Search, SlidersHorizontal, Upload, Waves, X } from "lucide-react";
 import type { Campus, Feature, Layers, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
+import PrintComparison from "./print-comparison";
 
 type SceneProps = ComponentProps<typeof import("./campus-scene").default>;
 const CampusScene = dynamic(async () => {
@@ -33,6 +34,7 @@ export default function CampusApp() {
   const [selected,setSelected]=useState<Feature|null>(null);
   const [layers,setLayers]=useState<Layers>({building:true,road:true,park:true,water:true});
   const [view,setView]=useState<ViewMode>("perspective");
+  const [comparePrint,setComparePrint]=useState(false);
   const [action,setAction]=useState<ViewerAction|null>(null);
   const [tab,setTab]=useState<"explore"|"models">("explore");
   const [modelFile,setModelFile]=useState<File|null>(null);
@@ -97,6 +99,8 @@ export default function CampusApp() {
     const url=URL.createObjectURL(file);const link=document.createElement("a");link.href=url;link.download=`${campus.id}-campus.geojson`;link.click();URL.revokeObjectURL(url);
   };
   const current=campuses.find(c=>c.id===campusId)!;
+  const printMode=comparePrint&&tab==="explore";
+  const showPrint=printMode&&campus&&!loading;
   return <div className="app-shell">
     <a className="skip-to-map" href="#map-view">Skip to map controls</a>
     <aside className="rail" aria-label="Main navigation">
@@ -136,19 +140,29 @@ export default function CampusApp() {
           <button className="secondary-button mobile-export" onClick={exportData} disabled={!campus||loading}><ArrowDownToLine size={15}/>Export map data</button>
           <div className="directory-footer"><span className="small-dot"/>Built on open geographic data<button onClick={showInfo} aria-label="Read map attribution"><ArrowUpRight size={13}/></button></div>
         </section>
-        <section className="map-section" id="map-view" aria-labelledby="map-title" tabIndex={-1}>
-          <div className="map-toolbar"><div className="map-breadcrumb"><span className="toolbar-icon"><MapPin size={16}/></span><strong>{modelFile?modelFile.name:current.short}</strong><ChevronRight size={13}/><span>{modelFile?"Model viewer":"Campus overview"}</span></div><div className="view-switch" role="group" aria-label="Map view"><button className={view==="perspective"?"selected":""} aria-pressed={view==="perspective"} onClick={()=>setView("perspective")}><Box size={14}/>3D</button><button className={view==="top"?"selected":""} aria-pressed={view==="top"} onClick={()=>setView("top")}><Map size={14}/>Top</button></div><button ref={directoryToggle} className="icon-button mobile-directory-toggle" aria-label="Open campus directory" onClick={()=>setMobileDirectory(true)}><Layers3 size={18}/></button></div>
+        <section className="map-section" id="map-view" aria-labelledby={showPrint?"print-heading":"map-title"} tabIndex={-1}>
+          <div className="map-toolbar">
+            <div className="map-breadcrumb"><span className="toolbar-icon"><MapPin size={16}/></span><strong>{modelFile?modelFile.name:current.short}</strong><ChevronRight size={13}/><span>{modelFile?"Model viewer":printMode?"Print comparison":"Campus overview"}</span></div>
+            <div className="view-switch" role="group" aria-label="Map view">
+              <button className={!printMode&&view==="perspective"?"selected":""} aria-pressed={!printMode&&view==="perspective"} onClick={()=>{setComparePrint(false);setView("perspective");}}><Box size={14}/>3D</button>
+              <button className={!printMode&&view==="top"?"selected":""} aria-pressed={!printMode&&view==="top"} onClick={()=>{setComparePrint(false);setView("top");}}><Map size={14}/>Top</button>
+              {tab==="explore"&&<button className={printMode?"selected":""} aria-pressed={printMode} disabled={!campus||loading} onClick={()=>setComparePrint(true)}>Compare print</button>}
+            </div>
+            <button ref={directoryToggle} className="icon-button mobile-directory-toggle" aria-label="Open campus directory" onClick={()=>setMobileDirectory(true)}><Layers3 size={18}/></button>
+          </div>
           <div className="viewer" ref={viewer}>
-            <CampusScene campus={loading ? null : campus} layers={layers} selected={selected?.id??null} onSelect={select} view={view} action={action} modelFile={modelFile} upAxis={upAxis} onError={showError} onModelError={clearFailedModel} onReady={ready}/>
+            {showPrint&&<PrintComparison campus={campus} layers={layers} selected={selected}/>}
+            <div className="campus-map-view" hidden={Boolean(showPrint)}>
+            <CampusScene campus={loading ? null : campus} layers={layers} selected={selected?.id??null} onSelect={select} view={view} action={action} modelFile={modelFile} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready}/>
             {(loading||!sceneReady)&&!error&&<div className="loading-overlay" role="status"><LoaderCircle className="spin" size={28}/><strong>Bringing campus into focus</strong><span>Preparing your 3D view…</span></div>}
             {error&&<div className="error-banner" role="alert"><Info size={17}/><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError("")}><X size={16}/></button></div>}
             <div className="map-title"><span className="map-kicker">{modelFile?"LOCAL MODEL":"CAMPUS DIGITAL TWIN"}</span><h2 id="map-title">{modelFile?modelFile.name:current.name}</h2><p>{modelFile?"Your geometry. A different perspective.":campus?.subtitle}</p></div>
-            <div className="compass" aria-label="North indicator"><span>N</span><Compass size={34} strokeWidth={1.15}/></div>
             <div className="map-controls"><button title="Zoom in" aria-label="Zoom in" onClick={()=>command("zoomIn")}><Plus size={19}/></button><button title="Zoom out" aria-label="Zoom out" onClick={()=>command("zoomOut")}><Minus size={19}/></button><span/><button title="Reset view" aria-label="Reset view" onClick={()=>{setView("perspective");command("reset");}}><RotateCcw size={17}/></button><button title="Fullscreen" aria-label="Toggle fullscreen" onClick={()=>{if(document.fullscreenElement)void document.exitFullscreen();else void viewer.current?.requestFullscreen().catch(()=>setError("Fullscreen is unavailable in this browser."));}}><Expand size={17}/></button></div>
             {selected&&!modelFile&&<article className="feature-card"><div className="feature-card-top"><span><Building2 size={15}/>BUILDING DETAILS</span><button className="icon-button" aria-label="Close building details" onClick={closeDetails}><X size={16}/></button></div><h3 ref={detailsHeading} tabIndex={-1}>{selected.name||"Mapped building"}</h3>{selected.localName&&selected.localName!==selected.name&&<p className="local-name">{selected.localName}</p>}<div className="feature-facts"><div><span>Height {selected.heightEstimated?"(estimated)":"(mapped)"}</span><strong>{selected.height.toFixed(1)}<small> m</small></strong></div><div><span>Footprint</span><strong>{selected.area?.toLocaleString()}<small> m²</small></strong></div></div><p className="height-note">{selected.heightEstimated?"Height inferred from levels, or a 14 m default. Not survey-grade.":"Height supplied by OpenStreetMap contributors."}</p><button className="primary-button" onClick={()=>command("focus")}><Crosshair size={15}/>Focus building</button><a className="osm-link" href={`https://www.openstreetmap.org/${selected.id.split("/").slice(0,2).join("/")}`} target="_blank" rel="noreferrer">View source feature<ArrowUpRight size={12}/></a></article>}
             <p className="scene-keyboard-help" id="scene-keyboard-help">Arrow keys pan. {view==="perspective"&&"Shift + arrow keys orbit. "}Tab to the zoom and reset controls.</p>
             <div className="map-bottom"><div className="map-legend"><span><i style={{background:"#b7c7cd"}}/>Built environment</span><span><i style={{background:"#92b79d"}}/>Landscape</span><span><i style={{background:"#8abcc6"}}/>Water</span></div><div className="interaction-hint"><MousePointer2 size={13}/>Drag to {view==="top"?"pan":"orbit"}<span>·</span>Scroll to zoom<span>·</span>Click to inspect</div></div>
             <a className="attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
+            </div>
           </div>
           <div className="stats-strip"><div className="stat"><span className="stat-icon"><Building2 size={20}/></span><div><span>Mapped buildings</span><strong>{loading?"—":buildings.length}<small>across this area</small></strong></div></div><div className="stat"><span className="stat-icon green"><Leaf size={20}/></span><div><span>Landscape features</span><strong>{loading?"—":campus?.features.filter(f=>f.kind==="park").length}<small>green spaces</small></strong></div></div><div className="stat"><span className="stat-icon blue"><Move3D size={20}/></span><div><span>Spatial reference</span><strong className="text-stat">WGS 84<small>Real-world coordinates</small></strong></div></div><div className="stat snapshot-stat"><span className="stat-icon"><Layers3 size={20}/></span><div><span>Data snapshot</span><strong className="text-stat">{campus?new Date(campus.fetchedAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}):"—"}<small>Not live sensor data</small></strong></div></div></div>
         </section>
