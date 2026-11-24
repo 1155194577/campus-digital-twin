@@ -48,7 +48,7 @@ function fitModel(s: SceneState, upAxis: UpAxis, view: ViewMode): ModelInfo | nu
   s.controls.update(); s.invalidate();
   let triangles = 0;
   pivot.traverse(child => { if (child instanceof THREE.Mesh) { const g = child.geometry as THREE.BufferGeometry; triangles += (g.index?.count ?? g.getAttribute("position")?.count ?? 0) / 3 * (child instanceof THREE.InstancedMesh ? child.count : 1); } });
-  return { parts: pivot.children.length, triangles: Math.round(triangles), size: [size.x, size.z, size.y] };
+  return { parts: pivot.children.length, triangles: Math.round(triangles), size: [size.x, size.z, size.y].map(v => v < maxSize * 1e-9 ? 0 : v) as ModelInfo["size"] };
 }
 
 export default function CampusScene({ campus, layers, selected, onSelect, view, action, modelFiles, upAxis, active, onError, onModelError, onReady, onModelInfo }: {
