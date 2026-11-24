@@ -4,7 +4,9 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { preload } from "react-dom";
-import { ArrowDownToLine, ArrowUpRight, Box, Building2, Check, ChevronDown, ChevronRight, Crosshair, Expand, FileBox, Info, Layers3, Leaf, LoaderCircle, Map, MapPin, Minus, MousePointer2, Move3D, Plus, RotateCcw, Search, SlidersHorizontal, Upload, Waves, X } from "lucide-react";
+import { ArrowDownToLine, ArrowUpRight, Box, Building2, Check, ChevronDown, ChevronRight, Crosshair, Expand, FileBox, Info, Layers3, Leaf, LoaderCircle, Map, MapPin, Minus, MousePointer2, Move3D, Plus, RotateCcw, Search, SlidersHorizontal, TrainFront, Upload, Waves, X } from "lucide-react";
+import { cuhkCampusMap, isTransitPlace, placeAliases, railwayEntranceSource, searchPlaces, universityExits, universityStation, universityStationMap } from "@/lib/campus-places";
+import type { CampusPlace } from "@/lib/campus-places";
 import { partColors } from "@/lib/types";
 import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 import { buildWalkingGraph, distance, findWalkingRoute, formatEndpoint, parseEndpoint } from "@/lib/walking-route";
@@ -24,6 +26,7 @@ const formatSize = (value: number) => value.toLocaleString("en-GB", value < 100 
 const initialCampusId = "hkstp";
 const campuses = [{id:"hkstp",short:"HKSTP",name:"Hong Kong Science Park",tag:"Science & innovation"},{id:"cuhk",short:"CUHK",name:"The Chinese University of Hong Kong",tag:"Education & research"}];
 const layerOptions = [{key:"building",name:"Buildings",icon:Building2,color:"#b7c7cd"},{key:"road",name:"Roads & pathways",icon:Map,color:"#c2c9c3"},{key:"park",name:"Green spaces",icon:Leaf,color:"#92b79d"},{key:"water",name:"Water bodies",icon:Waves,color:"#8abcc6"}] as const;
+const transitPlaces = [universityStation,...universityExits];
 
 function normalizeBuildingName(name: string) {
   return name.normalize("NFKC").toLowerCase().replace(/['‘’ʼ.]/g,"").replace(/[\p{P}\s]+/gu," ").trim();
@@ -92,7 +95,8 @@ export default function CampusApp() {
     return ()=>controller.abort();
   },[campusId, locationReady]);
   const activeCampus = campus?.id === campusId ? campus : null;
-  const selected=activeCampus?.features.find(f=>f.id===selectedId)??null;
+  const isCuhk=activeCampus?.id==="cuhk"&&!planning;
+  const selected=(isCuhk?transitPlaces.find(f=>f.id===selectedId):null)??activeCampus?.features.find(f=>f.id===selectedId)??null;
   const start=useMemo(()=>activeCampus?parseEndpoint(activeCampus,startKey):null,[activeCampus,startKey]);
   const destination=useMemo(()=>activeCampus?parseEndpoint(activeCampus,destinationKey):null,[activeCampus,destinationKey]);
   const graph=useMemo(()=>activeCampus?buildWalkingGraph(activeCampus):null,[activeCampus]);
@@ -116,10 +120,12 @@ export default function CampusApp() {
     }
     return groups;
   },[named]);
+  const places=useMemo(()=>isCuhk?[...transitPlaces,...named]:named,[isCuhk,named]);
   const filtered=useMemo(()=>{
+    if(isCuhk)return searchPlaces(query.trim()?places:places.filter(p=>p.kind!=="exit"),campusId,query);
     const search=normalizeBuildingName(query);
     return named.filter(f=>normalizeBuildingName(`${f.name} ${f.localName??""}`).includes(search));
-  },[named,query]);
+  },[isCuhk,places,campusId,named,query]);
   const ready=useCallback(()=>setSceneReady(true),[]);
   const showError=useCallback((message:string)=>{setError(message);setSceneReady(true);},[]);
   const clearFailedModel=useCallback(()=>setModelFiles([]),[]);
@@ -139,8 +145,9 @@ export default function CampusApp() {
     const key=activeCampus&&formatEndpoint(activeCampus,{point});
     if(key) putEndpoint(key);
   },[activeCampus,putEndpoint]);
-  const select=useCallback((feature:Feature|null)=>{
+  const select=useCallback((feature:CampusPlace|null)=>{
     detailsTrigger.current=null;
+    if (planning && feature && isTransitPlace(feature)) return;
     if (planning && tab === "explore" && !comparePrint && feature) putEndpoint(feature.id);
     else setSelectedId(feature?.id??null);
     setMobileDirectory(false);
@@ -151,7 +158,8 @@ export default function CampusApp() {
     if (planning) clearRoute();
     else {
       setView("top");
-      if (selected) {setStartKey(selected.id);setChoosing("destination");}
+      if (selected && isTransitPlace(selected)) setSelectedId(null);
+      else if (selected) {setStartKey(selected.id);setChoosing("destination");}
     }
     setPlanning(!planning);
   };
@@ -167,7 +175,7 @@ export default function CampusApp() {
     if (selected && detailsTrigger.current) detailsHeading.current?.focus();
   },[selected]);
   const command=(type:ViewerAction["type"])=>{
-    if(type==="focus")setView("perspective");
+    if(type==="focus"&&selected&&!isTransitPlace(selected))setView("perspective");
     setAction({type,at:Date.now()});
   };
   const chooseModels=(list?:FileList|null)=>{
@@ -223,15 +231,19 @@ export default function CampusApp() {
             <div className="layer-heading"><h2>Map layers</h2><SlidersHorizontal size={15}/></div>
             <div className="layers">{layerOptions.map(({key,name,icon:Icon,color})=><label className="layer-row" key={key}><span className="layer-symbol" style={{color}}><Icon size={17}/></span><span>{name}</span><input type="checkbox" checked={layers[key]} onChange={e=>setLayers({...layers,[key]:e.target.checked})}/><span className="custom-check">{layers[key]&&<Check size={12}/>}</span></label>)}</div>
             <div className="directory-rule"/>
-            <div className="layer-heading"><h2>Building directory</h2><span className="count">{named.length}</span></div>
-            <div className="search-field"><Search size={15}/><input ref={search} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Find a building…" aria-label="Find a building"/>{query&&<button onClick={()=>{setQuery("");search.current?.focus();}} aria-label="Clear search"><X size={13}/></button>}</div>
-            <div className="visually-hidden" role="status">{loading?"Loading campus":`${filtered.length} buildings found`}</div>
+            <div className="layer-heading"><h2>{isCuhk?"Places directory":"Building directory"}</h2><span className="count">{places.length}</span></div>
+            <div className="search-field"><Search size={15}/><input ref={search} value={query} onChange={e=>setQuery(e.target.value)} placeholder={isCuhk?"Find a place or code…":"Find a building…"} aria-label={isCuhk?"Find a place or code":"Find a building"}/>{query&&<button onClick={()=>{setQuery("");search.current?.focus();}} aria-label="Clear search"><X size={13}/></button>}</div>
+            <div className="visually-hidden" role="status">{loading?"Loading campus":`${filtered.length} ${isCuhk?"places":"buildings"} found`}</div>
             <div className="building-list">{loading?<div className="list-message">Loading campus…</div>:filtered.length?filtered.map(f=>{
-              const footprints=footprintsByName.get(f.name)??[];
-              const sameArea=footprints.filter(other=>other.area===f.area);
-              const footprintLabel=footprints.length>1&&(f.area!=null&&sameArea.length===1?`${f.area.toLocaleString()} m²`:`Footprint ${footprints.indexOf(f)+1}`);
-              return <button className={`building-row ${selected?.id===f.id?"selected":""}`} key={f.id} aria-expanded={planning?undefined:selected?.id===f.id} onClick={e=>{setLayers(l=>({...l,building:true}));select(f);if(!planning&&e.detail===0){detailsTrigger.current=e.currentTarget;if(selected?.id===f.id)detailsHeading.current?.focus();}}}><span className="building-icon"><Building2 size={16}/></span><span><strong>{f.name}</strong><small>{f.category==="yes"?"Campus building":f.category.replaceAll("_"," ")}{footprintLabel&&<span style={{textTransform:"none"}}> · {footprintLabel}</span>}</small></span><ChevronRight size={13}/></button>;
-            }):<div className="list-message">No buildings found. Try another name.</div>}</div>
+              const transit=isTransitPlace(f);
+              const footprints=transit?[]:footprintsByName.get(f.name)??[];
+              const sameArea=transit?[]:footprints.filter(other=>other.area===f.area);
+              const footprintLabel=!transit&&footprints.length>1&&(f.area!=null&&sameArea.length===1?`${f.area.toLocaleString()} m²`:`Footprint ${footprints.indexOf(f)+1}`);
+              const aliases=transit?[]:placeAliases(campusId,f);
+              const label=transit?(f.kind==="station"?"MTR · East Rail line":"MTR exit"):(f.category==="yes"?"Campus building":f.category.replaceAll("_"," "));
+              return <button className={`building-row ${selected?.id===f.id?"selected":""}`} key={f.id} aria-expanded={planning?undefined:selected?.id===f.id} onClick={e=>{if(!transit)setLayers(l=>({...l,building:true}));select(f);if(!planning&&e.detail===0){detailsTrigger.current=e.currentTarget;if(selected?.id===f.id)detailsHeading.current?.focus();}}}><span className="building-icon">{transit?<TrainFront size={16}/>:<Building2 size={16}/>}</span><span><strong>{f.name}</strong><small>{aliases.length?aliases.join(" · "):label}{footprintLabel&&<span style={{textTransform:"none"}}> · {footprintLabel}</span>}</small></span><ChevronRight size={13}/></button>;
+            }):<div className="list-message">{isCuhk?"No places found. Try a name, code, or station exit.":"No buildings found. Try another name."}</div>}</div>
+            {isCuhk&&<a className="campus-map-source" href={cuhkCampusMap} target="_blank" rel="noreferrer">Official CUHK campus map<ArrowUpRight size={12}/></a>}
           </>:<div className="model-panel"><div className="model-art"><FileBox size={40} strokeWidth={1.2}/></div><h2>Your models, a closer look.</h2><p>Open a scanned object or printable model to orbit, zoom and inspect it in 3D.</p><button className="primary-button" onClick={()=>upload.current?.click()}><Upload size={15}/>Open 3D model</button><small>STL or self-contained GLB · up to 50 MB · or drop files on the viewer</small><small>Select several STL parts (e.g. map-ways + map-rest) to view them together.</small>{modelFiles.map(file=><div className="loaded-model" key={file.name+file.lastModified}><FileBox size={17}/><span>{file.name}<small>{(file.size/1024/1024).toFixed(2)} MB · Local file</small></span><button className="icon-button" onClick={()=>removeModel(file)} aria-label={`Remove ${file.name}`}><X size={15}/></button></div>)}{modelFiles.length>0&&<div className="axis-setting"><div className="axis-heading"><span>Up axis</span><div className="view-switch" role="group" aria-label="Model up axis"><button className={upAxis==="z"?"selected":""} aria-pressed={upAxis==="z"} onClick={()=>setUpAxis("z")}>Z up</button><button className={upAxis==="y"?"selected":""} aria-pressed={upAxis==="y"} onClick={()=>setUpAxis("y")}>Y up</button></div></div><p>STL opens Z-up, as slicers expect; GLB opens Y-up, per glTF. Switch if the model lies on its side.</p></div>}<div className="privacy-note"><Check size={14}/>Your model stays on this device.</div></div>}
           <button className="secondary-button mobile-export" onClick={exportData} disabled={!campus||loading}><ArrowDownToLine size={15}/>Export map data</button>
           <div className="directory-footer"><span className="small-dot"/>Built on open geographic data<button onClick={showInfo} aria-label="Read map attribution"><ArrowUpRight size={13}/></button></div>
@@ -250,15 +262,32 @@ export default function CampusApp() {
             <button ref={directoryToggle} className="icon-button mobile-directory-toggle" aria-label="Open campus directory" aria-controls="campus-directory" aria-expanded={mobileDirectory} onClick={()=>setMobileDirectory(true)}><Layers3 size={18}/></button>
           </div>
           <div className={`viewer ${dragging?"dragging":""} ${planning&&start&&destination&&tab==="explore"?"route-shown":""}`} ref={viewer} onDragOver={e=>{if(!e.dataTransfer.types.includes("Files"))return;e.preventDefault();setDragging(true);}} onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node|null))setDragging(false);}} onDrop={e=>{e.preventDefault();setDragging(false);chooseModels(e.dataTransfer.files);}}>
-            {showPrint&&<PrintComparison campus={campus} layers={layers} selected={selected}/>}
+            {showPrint&&<PrintComparison campus={campus} layers={layers} selected={selected&&!isTransitPlace(selected)?selected:null}/>}
             <div className="campus-map-view" hidden={Boolean(showPrint)}>
-            <CampusScene campus={loading?null:activeCampus} layers={layers} selected={planning?null:selected?.id??null} onSelect={select} onMapPoint={!showPrint&&planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFiles={modelFiles} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready} onModelInfo={setModelInfo} onHeadingChange={showNorthHeading}/>
+            <CampusScene campus={loading?null:activeCampus} layers={layers} selected={planning?null:selected} showTransit={!planning&&tab==="explore"} onSelect={select} onMapPoint={!showPrint&&planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFiles={modelFiles} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready} onModelInfo={setModelInfo} onHeadingChange={showNorthHeading}/>
             {(loading||!sceneReady)&&!error&&<div className="loading-overlay" role="status"><LoaderCircle className="spin" size={28}/><strong>{modelFiles.length?"Opening your model":"Bringing campus into focus"}</strong><span>Preparing your 3D view…</span></div>}
             {error&&<div className="error-banner" role="alert"><Info size={17}/><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError("")}><X size={16}/></button></div>}
             <div className="map-title"><span className="map-kicker">{modelFiles.length?"LOCAL MODEL":"CAMPUS DIGITAL TWIN"}</span><h2 id="map-title">{modelName??current.name}</h2><p className="map-subtitle">{modelFiles.length?"Your geometry. A different perspective.":campus?.subtitle}</p><p className="touch-hint">{view==="top"?"Drag to pan · Pinch to zoom":"Drag to orbit · Pinch to zoom · Two fingers to pan"}</p></div>
             <div className="compass" role="img" aria-label="North indicator" style={modelFiles.length?{visibility:"hidden"}:undefined}><span>N</span><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="15" fill="none" stroke="currentColor" strokeWidth="1.5"/><path ref={northNeedle} d="M17 6L22 25L17 21L12 25Z" fill="currentColor"/></svg></div>
             <div className="map-controls"><button title="Zoom in" aria-label="Zoom in" onClick={()=>command("zoomIn")}><Plus size={19}/></button><button title="Zoom out" aria-label="Zoom out" onClick={()=>command("zoomOut")}><Minus size={19}/></button><span/><button title="Reset view" aria-label="Reset view" onClick={()=>{setView("perspective");command("reset");}}><RotateCcw size={17}/></button><button title="Fullscreen" aria-label="Toggle fullscreen" onClick={()=>{if(document.fullscreenElement)void document.exitFullscreen();else void viewer.current?.requestFullscreen().catch(()=>setError("Fullscreen is unavailable in this browser."));}}><Expand size={17}/></button></div>
-            {selected&&!planning&&!modelFiles.length&&<article className="feature-card"><div className="feature-card-top"><span><Building2 size={15}/>BUILDING DETAILS</span><button className="icon-button" aria-label="Close building details" onClick={closeDetails}><X size={16}/></button></div><h3 ref={detailsHeading} tabIndex={-1}>{selected.name||"Mapped building"}</h3>{selected.localName&&selected.localName!==selected.name&&<p className="local-name">{selected.localName}</p>}<div className="feature-facts"><div><span>Height {selected.heightEstimated?"(estimated)":"(mapped)"}</span><strong>{selected.height.toFixed(1)}<small> m</small></strong></div><div><span>Footprint</span><strong>{selected.area?.toLocaleString()}<small> m²</small></strong></div></div><p className="height-note">{selected.heightEstimated?"Height inferred from levels, or a 14 m default. Not survey-grade.":"Height supplied by OpenStreetMap contributors."}</p><button className="primary-button" onClick={()=>command("focus")}><Crosshair size={15}/>Focus building</button><a className="osm-link" href={`https://www.openstreetmap.org/${selected.id.split("/").slice(0,2).join("/")}`} target="_blank" rel="noreferrer">View source feature<ArrowUpRight size={12}/></a></article>}
+            {selected&&!planning&&!modelFiles.length&&<article className="feature-card">
+              <div className="feature-card-top"><span>{isTransitPlace(selected)?<><TrainFront size={15}/>MTR · EAST RAIL LINE</>:<><Building2 size={15}/>BUILDING DETAILS</>}</span><button className="icon-button" aria-label={isTransitPlace(selected)?"Close place details":"Close building details"} onClick={closeDetails}><X size={16}/></button></div>
+              <h3 ref={detailsHeading} tabIndex={-1}>{selected.name||"Mapped building"}</h3>
+              {selected.localName&&selected.localName!==selected.name&&<p className="local-name">{selected.localName}</p>}
+              {isTransitPlace(selected)?<>
+                <div className="station-exits" aria-label="University Station exits">
+                  {universityExits.map(exit=><button key={exit.id} className="secondary-button" aria-pressed={exit.id===selected.id} onClick={()=>select(exit)}>Exit {exit.exit}</button>)}
+                </div>
+                <button className="primary-button" onClick={()=>command("focus")}><Crosshair size={15}/>Focus {selected.kind}</button>
+                <a className="osm-link" href={universityStationMap} target="_blank" rel="noreferrer">MTR station map<ArrowUpRight size={12}/></a>
+                {selected.kind==="exit"&&<a className="osm-link" href={railwayEntranceSource} target="_blank" rel="noreferrer">Exit data: Lands Department via CSDI<ArrowUpRight size={12}/></a>}
+              </>:<>
+                <div className="feature-facts"><div><span>Height {selected.heightEstimated?"(estimated)":"(mapped)"}</span><strong>{selected.height.toFixed(1)}<small> m</small></strong></div><div><span>Footprint</span><strong>{selected.area?.toLocaleString()}<small> m²</small></strong></div></div>
+                <p className="height-note">{selected.heightEstimated?"Height inferred from levels, or a 14 m default. Not survey-grade.":"Height supplied by OpenStreetMap contributors."}</p>
+                <button className="primary-button" onClick={()=>command("focus")}><Crosshair size={15}/>Focus building</button>
+                <a className="osm-link" href={`https://www.openstreetmap.org/${selected.id.split("/").slice(0,2).join("/")}`} target="_blank" rel="noreferrer">View source feature<ArrowUpRight size={12}/></a>
+              </>}
+            </article>}
             <p className="scene-keyboard-help" id="scene-keyboard-help">Arrow keys pan. {view==="perspective"&&"Shift + arrow keys orbit. "}Tab to the zoom and reset controls.</p>
             <div className="map-bottom">{modelFiles.length?(modelFiles.length>1?<div className="map-legend">{modelFiles.map((file,index)=><span key={file.name+file.lastModified}><i style={{background:partColors[index%partColors.length]}}/>{file.name}</span>)}</div>:<span/>):<div className="map-legend"><span><i style={{background:"#b7c7cd"}}/>Built environment</span><span><i style={{background:"#92b79d"}}/>Landscape</span><span><i style={{background:"#8abcc6"}}/>Water</span></div>}<div className="interaction-hint"><MousePointer2 size={13}/>Drag to {view==="top"?"pan":"orbit"}<span>·</span>Scroll to zoom{!modelFiles.length&&<><span>·</span>Click to inspect</>}</div></div>
             <a className="attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
