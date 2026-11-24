@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Campus Atlas | Digital twin",
-  description: "Explore the HKSTP and CUHK campuses in an interactive Three.js digital twin. Inspect mapped buildings, landscape layers and your own 3D models.",
+  title: "meshPotato",
+  description: "3D engineering and spatial technology, from data to fabrication.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
