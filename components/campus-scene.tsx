@@ -3,13 +3,22 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { TrainFront } from "lucide-react";
+import { isTransitPlace, projectPlace, universityStation } from "@/lib/campus-places";
+import type { CampusPlace, TransitPlace } from "@/lib/campus-places";
 import type { Campus, Feature, Layers, ViewMode, ViewerAction } from "@/lib/types";
 
 type SceneState = {
   scene: THREE.Scene; camera: THREE.PerspectiveCamera; renderer: THREE.WebGLRenderer;
   controls: OrbitControls; groups: Record<keyof Layers, THREE.Group>; buildings: THREE.Mesh[];
   model: THREE.Group; span: number; focus?: THREE.Vector3; initial: THREE.Vector3;
+  updateMarkers?: () => void;
 };
+
+function transitPosition(place: TransitPlace, campus: Campus) {
+  const [x, z] = projectPlace(place, campus.center);
+  return new THREE.Vector3(x, 2, z);
+}
 
 function disposeObject(object: THREE.Object3D) {
   object.traverse(child => {
@@ -25,14 +34,18 @@ function disposeObject(object: THREE.Object3D) {
 }
 
 export default function CampusScene({ campus, layers, selected, onSelect, view, action, modelFile, onError, onModelError, onReady }: {
-  campus: Campus; layers: Layers; selected: string | null; onSelect: (f: Feature | null) => void;
+  campus: Campus; layers: Layers; selected: CampusPlace | null; onSelect: (f: CampusPlace | null) => void;
   view: ViewMode; action: ViewerAction | null; modelFile: File | null;
   onError: (error: string) => void; onModelError: () => void; onReady: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
+  const stationMarker = useRef<HTMLButtonElement>(null);
+  const exitMarker = useRef<HTMLButtonElement>(null);
   const state = useRef<SceneState | null>(null);
   const lastAction = useRef<ViewerAction | null>(null);
   const callbacks = useRef({ onSelect, onError, onModelError, onReady });
+  const station = campus.id === "cuhk" && !modelFile ? universityStation : null;
+  const exit = station && selected?.kind === "exit" ? selected : null;
   useEffect(() => { callbacks.current = { onSelect, onError, onModelError, onReady }; }, [onSelect, onError, onModelError, onReady]);
 
   useEffect(() => {
@@ -102,7 +115,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
       const rect = renderer.domElement.getBoundingClientRect();
       raycaster.setFromCamera(new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1),camera);
       const hit = groups.building.visible ? raycaster.intersectObjects(buildings,false)[0] : null;
-      callbacks.current.onSelect(hit ? hit.object.userData.feature : null);
+      callbacks.current.onSelect(hit ? hit.object.userData.feature as Feature : null);
     };
     renderer.domElement.addEventListener("pointerdown", down);
     renderer.domElement.addEventListener("pointerup", up);
@@ -117,6 +130,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
         if (controls.target.distanceTo(state.current.focus)<.1) state.current.focus=undefined;
       }
       controls.update(); renderer.render(scene,camera);
+      state.current?.updateMarkers?.();
     };
     render(); callbacks.current.onReady();
     return () => {
@@ -129,16 +143,36 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
 
   useEffect(() => { const s=state.current; if(s) for(const key of Object.keys(layers) as (keyof Layers)[]) s.groups[key].visible=layers[key] && !modelFile; }, [layers, campus, modelFile]);
   useEffect(() => {
+    const s = state.current;
+    if (!s || !station) return;
+    const markers = [
+      { node: stationMarker.current, point: transitPosition(station, campus) },
+      ...(exit ? [{ node: exitMarker.current, point: transitPosition(exit, campus) }] : []),
+    ];
+    const screen = new THREE.Vector3();
+    s.updateMarkers = () => {
+      for (const { node, point } of markers) {
+        if (!node) continue;
+        screen.copy(point).project(s.camera);
+        const visible = screen.z >= -1 && screen.z <= 1 && Math.abs(screen.x) < .94 && Math.abs(screen.y) < .92;
+        node.hidden = !visible;
+        if (!visible) continue;
+        node.style.left = `${((screen.x + 1) * 50).toFixed(2)}%`;
+        node.style.top = `${((1 - screen.y) * 50).toFixed(2)}%`;
+      }
+    };
+    return () => { s.updateMarkers = undefined; };
+  }, [campus, station, exit]);
+  useEffect(() => {
     const s = state.current; if(!s)return;
     for(const mesh of s.buildings) {
       const material=mesh.material as THREE.MeshStandardMaterial;
-      material.color.set(mesh.userData.feature.id===selected ? "#317cff" : mesh.userData.baseColor);
-      material.emissive.set(mesh.userData.feature.id===selected ? "#092649" : "#000000");
+      material.color.set(mesh.userData.feature.id===selected?.id ? "#317cff" : mesh.userData.baseColor);
+      material.emissive.set(mesh.userData.feature.id===selected?.id ? "#092649" : "#000000");
     }
-    if(selected) {
-      const feature=campus.features.find(f=>f.id===selected);
-      if(feature) s.focus=new THREE.Vector3(feature.points.reduce((a,p)=>a+p[0],0)/feature.points.length,0,feature.points.reduce((a,p)=>a+p[1],0)/feature.points.length);
-    }
+    if (!selected) s.focus = undefined;
+    else if (isTransitPlace(selected)) s.focus = transitPosition(selected, campus);
+    else s.focus = new THREE.Vector3(selected.points.reduce((a,p)=>a+p[0],0)/selected.points.length,0,selected.points.reduce((a,p)=>a+p[1],0)/selected.points.length);
   }, [selected,campus]);
   useEffect(() => {
     const s=state.current; if(!s)return;
@@ -159,11 +193,16 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
       offset.clampLength(s.controls.minDistance,s.controls.maxDistance); s.camera.position.copy(s.controls.target).add(offset);
     }
     if(action.type==="focus"&&selected) {
-      const mesh=s.buildings.find(m=>m.userData.feature.id===selected);
-      if(mesh) {const center=new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());s.controls.target.copy(center);s.camera.position.copy(center).add(new THREE.Vector3(130,150,160));s.focus=undefined;}
+      const transit=isTransitPlace(selected);
+      const mesh=transit?null:s.buildings.find(m=>m.userData.feature.id===selected.id);
+      const center=transit?transitPosition(selected,campus):mesh?new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()):null;
+      if(center) {
+        const offset=transit?s.camera.position.clone().sub(s.controls.target).setLength(255):new THREE.Vector3(130,150,160);
+        s.controls.target.copy(center);s.camera.position.copy(center).add(offset);s.focus=undefined;
+      }
     }
     s.controls.update();
-  },[action,selected]);
+  },[action,selected,campus]);
   useEffect(()=>{
     const s=state.current; if(!s)return;
     let cancelled=false;
@@ -197,5 +236,9 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
     void load();
     return ()=>{cancelled=true;disposeObject(s.model);s.model.clear();};
   },[modelFile,campus]);
-  return <div className="scene-canvas" ref={container}/>;
+  return <>
+    <div className="scene-canvas" ref={container}/>
+    {station&&<button ref={stationMarker} hidden className="map-place-marker" aria-pressed={selected?.id===station.id} onClick={()=>onSelect(station)}><TrainFront size={12}/>{station.name}</button>}
+    {exit&&<button ref={exitMarker} hidden className="map-place-marker exit-marker" aria-pressed="true" onClick={()=>onSelect(exit)}><TrainFront size={12}/>Exit {exit.exit}</button>}
+  </>;
 }

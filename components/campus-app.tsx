@@ -3,8 +3,10 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownToLine, ArrowUpRight, Box, Building2, Check, ChevronDown, ChevronRight, Compass, Crosshair, Expand, FileBox, Info, Layers3, Leaf, LoaderCircle, Map, MapPin, Minus, MousePointer2, Move3D, Plus, RotateCcw, Search, SlidersHorizontal, Upload, Waves, X } from "lucide-react";
-import type { Campus, Feature, Layers, ViewMode, ViewerAction } from "@/lib/types";
+import { ArrowDownToLine, ArrowUpRight, Box, Building2, Check, ChevronDown, ChevronRight, Compass, Crosshair, Expand, FileBox, Info, Layers3, Leaf, LoaderCircle, Map, MapPin, Minus, MousePointer2, Move3D, Plus, RotateCcw, Search, SlidersHorizontal, TrainFront, Upload, Waves, X } from "lucide-react";
+import { cuhkCampusMap, isTransitPlace, placeAliases, railwayEntranceSource, searchPlaces, universityExits, universityStation, universityStationMap } from "@/lib/campus-places";
+import type { CampusPlace } from "@/lib/campus-places";
+import type { Campus, Layers, ViewMode, ViewerAction } from "@/lib/types";
 
 const CampusScene = dynamic(() => import("./campus-scene"), { ssr: false });
 const campuses = [{id:"hkstp",short:"HKSTP",name:"Hong Kong Science Park",tag:"Science & innovation"},{id:"cuhk",short:"CUHK",name:"The Chinese University of Hong Kong",tag:"Education & research"}];
@@ -17,7 +19,7 @@ export default function CampusApp() {
   const [sceneReady,setSceneReady]=useState(false);
   const [error,setError]=useState("");
   const [query,setQuery]=useState("");
-  const [selected,setSelected]=useState<Feature|null>(null);
+  const [selected,setSelected]=useState<CampusPlace|null>(null);
   const [layers,setLayers]=useState<Layers>({building:true,road:true,park:true,water:true});
   const [view,setView]=useState<ViewMode>("perspective");
   const [action,setAction]=useState<ViewerAction|null>(null);
@@ -35,13 +37,15 @@ export default function CampusApp() {
   },[campusId]);
   const buildings=useMemo(()=>campus?.features.filter(f=>f.kind==="building")??[],[campus]);
   const named=useMemo(()=>buildings.filter(f=>f.name).sort((a,b)=>a.name.localeCompare(b.name)),[buildings]);
-  const filtered=useMemo(()=>named.filter(f=>`${f.name} ${f.localName}`.toLowerCase().includes(query.toLowerCase())),[named,query]);
+  const isCuhk=campus?.id==="cuhk";
+  const places=useMemo(()=>isCuhk?[universityStation,...universityExits,...named]:named,[isCuhk,named]);
+  const filtered=useMemo(()=>searchPlaces(query.trim()?places:places.filter(p=>p.kind!=="exit"),campusId,query),[places,campusId,query]);
   const ready=useCallback(()=>setSceneReady(true),[]);
   const showError=useCallback((message:string)=>{setError(message);setSceneReady(true);},[]);
   const clearFailedModel=useCallback(()=>setModelFile(null),[]);
-  const select=useCallback((feature:Feature|null)=>{setSelected(feature);setMobileDirectory(false);},[]);
+  const select=useCallback((feature:CampusPlace|null)=>{setSelected(feature);setMobileDirectory(false);},[]);
   const command=(type:ViewerAction["type"])=>{
-    if(type==="focus")setView("perspective");
+    if(type==="focus"&&selected&&!isTransitPlace(selected))setView("perspective");
     setAction({type,at:Date.now()});
   };
   const chooseModel=(file?:File)=>{
@@ -80,9 +84,15 @@ export default function CampusApp() {
             <div className="layer-heading"><h2>Map layers</h2><SlidersHorizontal size={15}/></div>
             <div className="layers">{layerOptions.map(({key,name,icon:Icon,color})=><label className="layer-row" key={key}><span className="layer-symbol" style={{color}}><Icon size={17}/></span><span>{name}</span><input type="checkbox" checked={layers[key]} onChange={e=>setLayers({...layers,[key]:e.target.checked})}/><span className="custom-check">{layers[key]&&<Check size={12}/>}</span></label>)}</div>
             <div className="directory-rule"/>
-            <div className="layer-heading"><h2>Building directory</h2><span className="count">{named.length}</span></div>
-            <label className="search-field"><Search size={15}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Find a building…" aria-label="Find a building"/>{query&&<button onClick={()=>setQuery("")} aria-label="Clear search"><X size={13}/></button>}</label>
-            <div className="building-list" aria-live="polite">{loading?<div className="list-message">Loading campus…</div>:filtered.length?filtered.map(f=><button className={`building-row ${selected?.id===f.id?"selected":""}`} key={f.id} onClick={()=>{setLayers(l=>({...l,building:true}));select(f);}}><span className="building-icon"><Building2 size={16}/></span><span><strong>{f.name}</strong><small>{f.category==="yes"?"Campus building":f.category.replaceAll("_"," ")}</small></span><ChevronRight size={13}/></button>):<div className="list-message">No buildings found. Try another name.</div>}</div>
+            <div className="layer-heading"><h2>{isCuhk?"Places directory":"Building directory"}</h2><span className="count">{places.length}</span></div>
+            <label className="search-field"><Search size={15}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder={isCuhk?"Find a place or code…":"Find a building…"} aria-label={isCuhk?"Find a place or code":"Find a building"}/>{query&&<button onClick={()=>setQuery("")} aria-label="Clear search"><X size={13}/></button>}</label>
+            <div className="building-list" aria-live="polite">{loading?<div className="list-message">Loading campus…</div>:filtered.length?filtered.map(f=>{
+              const transit=isTransitPlace(f);
+              const aliases=transit?[]:placeAliases(campusId,f);
+              const label=transit?(f.kind==="station"?"MTR · East Rail line":"MTR exit"):(f.category==="yes"?"Campus building":f.category.replaceAll("_"," "));
+              return <button className={`building-row ${selected?.id===f.id?"selected":""}`} key={f.id} onClick={()=>{if(!transit)setLayers(l=>({...l,building:true}));select(f);}}><span className="building-icon">{transit?<TrainFront size={16}/>:<Building2 size={16}/>}</span><span><strong>{f.name}</strong><small>{aliases.length?aliases.join(" · "):label}</small></span><ChevronRight size={13}/></button>;
+            }):<div className="list-message">{isCuhk?"No places found. Try a name, code, or station exit.":"No buildings found. Try another name."}</div>}</div>
+            {isCuhk&&<a className="campus-map-source" href={cuhkCampusMap} target="_blank" rel="noreferrer">Official CUHK campus map<ArrowUpRight size={12}/></a>}
           </>:<div className="model-panel"><div className="model-art"><FileBox size={40} strokeWidth={1.2}/></div><h2>Your models, a closer look.</h2><p>Open a scanned object or printable model to orbit, zoom and inspect it in 3D.</p><button className="primary-button" onClick={()=>upload.current?.click()}><Upload size={15}/>Open 3D model</button><small>STL or self-contained GLB · up to 50 MB</small>{modelFile&&<div className="loaded-model"><FileBox size={17}/><span>{modelFile.name}<small>{(modelFile.size/1024/1024).toFixed(2)} MB · Local file</small></span><button className="icon-button" onClick={()=>{setModelFile(null);setError("");}} aria-label="Remove model"><X size={15}/></button></div>}<div className="privacy-note"><Check size={14}/>Your model stays on this device.</div></div>}
           <button className="secondary-button mobile-export" onClick={exportData} disabled={!campus||loading}><ArrowDownToLine size={15}/>Export map data</button>
           <div className="directory-footer"><span className="small-dot"/>Built on open geographic data<button onClick={()=>setInfo(true)} aria-label="Read map attribution"><ArrowUpRight size={13}/></button></div>
@@ -90,13 +100,30 @@ export default function CampusApp() {
         <section className="map-section">
           <div className="map-toolbar"><div className="map-breadcrumb"><span className="toolbar-icon"><MapPin size={16}/></span><strong>{modelFile?modelFile.name:current.short}</strong><ChevronRight size={13}/><span>{modelFile?"Model viewer":"Campus overview"}</span></div><div className="view-switch" aria-label="Map view"><button className={view==="perspective"?"selected":""} onClick={()=>setView("perspective")}><Box size={14}/>3D</button><button className={view==="top"?"selected":""} onClick={()=>setView("top")}><Map size={14}/>Top</button></div><button className="icon-button mobile-directory-toggle" aria-label="Open campus directory" onClick={()=>setMobileDirectory(true)}><Layers3 size={18}/></button></div>
           <div className="viewer" ref={viewer}>
-            {campus&&!loading&&<CampusScene campus={campus} layers={layers} selected={selected?.id??null} onSelect={select} view={view} action={action} modelFile={modelFile} onError={showError} onModelError={clearFailedModel} onReady={ready}/>}
+            {campus&&!loading&&<CampusScene campus={campus} layers={layers} selected={selected} onSelect={select} view={view} action={action} modelFile={modelFile} onError={showError} onModelError={clearFailedModel} onReady={ready}/>}
             {(loading||!sceneReady)&&!error&&<div className="loading-overlay"><LoaderCircle className="spin" size={28}/><strong>Bringing campus into focus</strong><span>Preparing your 3D view…</span></div>}
             {error&&<div className="error-banner" role="alert"><Info size={17}/><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError("")}><X size={16}/></button></div>}
             <div className="map-title"><span className="map-kicker">{modelFile?"LOCAL MODEL":"CAMPUS DIGITAL TWIN"}</span><h2>{modelFile?modelFile.name:current.name}</h2><p>{modelFile?"Your geometry. A different perspective.":campus?.subtitle}</p></div>
             <div className="compass" aria-label="North indicator"><span>N</span><Compass size={34} strokeWidth={1.15}/></div>
             <div className="map-controls"><button title="Zoom in" aria-label="Zoom in" onClick={()=>command("zoomIn")}><Plus size={19}/></button><button title="Zoom out" aria-label="Zoom out" onClick={()=>command("zoomOut")}><Minus size={19}/></button><span/><button title="Reset view" aria-label="Reset view" onClick={()=>{setView("perspective");command("reset");}}><RotateCcw size={17}/></button><button title="Fullscreen" aria-label="Toggle fullscreen" onClick={()=>{if(document.fullscreenElement)void document.exitFullscreen();else void viewer.current?.requestFullscreen().catch(()=>setError("Fullscreen is unavailable in this browser."));}}><Expand size={17}/></button></div>
-            {selected&&!modelFile&&<article className="feature-card"><div className="feature-card-top"><span><Building2 size={15}/>BUILDING DETAILS</span><button className="icon-button" aria-label="Close building details" onClick={()=>setSelected(null)}><X size={16}/></button></div><h3>{selected.name||"Mapped building"}</h3>{selected.localName&&selected.localName!==selected.name&&<p className="local-name">{selected.localName}</p>}<div className="feature-facts"><div><span>Height {selected.heightEstimated?"(estimated)":"(mapped)"}</span><strong>{selected.height.toFixed(1)}<small> m</small></strong></div><div><span>Footprint</span><strong>{selected.area?.toLocaleString()}<small> m²</small></strong></div></div><p className="height-note">{selected.heightEstimated?"Height inferred from levels, or a 14 m default. Not survey-grade.":"Height supplied by OpenStreetMap contributors."}</p><button className="primary-button" onClick={()=>command("focus")}><Crosshair size={15}/>Focus building</button><a className="osm-link" href={`https://www.openstreetmap.org/${selected.id.split("/").slice(0,2).join("/")}`} target="_blank" rel="noreferrer">View source feature<ArrowUpRight size={12}/></a></article>}
+            {selected&&!modelFile&&<article className="feature-card">
+              <div className="feature-card-top"><span>{isTransitPlace(selected)?<><TrainFront size={15}/>MTR · EAST RAIL LINE</>:<><Building2 size={15}/>BUILDING DETAILS</>}</span><button className="icon-button" aria-label={isTransitPlace(selected)?"Close place details":"Close building details"} onClick={()=>setSelected(null)}><X size={16}/></button></div>
+              <h3>{selected.name||"Mapped building"}</h3>
+              {selected.localName&&selected.localName!==selected.name&&<p className="local-name">{selected.localName}</p>}
+              {isTransitPlace(selected)?<>
+                <div className="station-exits" aria-label="University Station exits">
+                  {universityExits.map(exit=><button key={exit.id} className="secondary-button" aria-pressed={exit.id===selected.id} onClick={()=>select(exit)}>Exit {exit.exit}</button>)}
+                </div>
+                <button className="primary-button" onClick={()=>command("focus")}><Crosshair size={15}/>Focus {selected.kind}</button>
+                <a className="osm-link" href={universityStationMap} target="_blank" rel="noreferrer">MTR station map<ArrowUpRight size={12}/></a>
+                {selected.kind==="exit"&&<a className="osm-link" href={railwayEntranceSource} target="_blank" rel="noreferrer">Exit data: Lands Department via CSDI<ArrowUpRight size={12}/></a>}
+              </>:<>
+                <div className="feature-facts"><div><span>Height {selected.heightEstimated?"(estimated)":"(mapped)"}</span><strong>{selected.height.toFixed(1)}<small> m</small></strong></div><div><span>Footprint</span><strong>{selected.area?.toLocaleString()}<small> m²</small></strong></div></div>
+                <p className="height-note">{selected.heightEstimated?"Height inferred from levels, or a 14 m default. Not survey-grade.":"Height supplied by OpenStreetMap contributors."}</p>
+                <button className="primary-button" onClick={()=>command("focus")}><Crosshair size={15}/>Focus building</button>
+                <a className="osm-link" href={`https://www.openstreetmap.org/${selected.id.split("/").slice(0,2).join("/")}`} target="_blank" rel="noreferrer">View source feature<ArrowUpRight size={12}/></a>
+              </>}
+            </article>}
             <div className="map-bottom"><div className="map-legend"><span><i style={{background:"#b7c7cd"}}/>Built environment</span><span><i style={{background:"#92b79d"}}/>Landscape</span><span><i style={{background:"#8abcc6"}}/>Water</span></div><div className="interaction-hint"><MousePointer2 size={13}/>Drag to {view==="top"?"pan":"orbit"}<span>·</span>Scroll to zoom<span>·</span>Click to inspect</div></div>
             <a className="attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
           </div>
