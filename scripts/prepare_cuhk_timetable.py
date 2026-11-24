@@ -58,10 +58,11 @@ VENUES = {
     "Covered Playgrd, U Sport Centr": "way/134820401",
     "Academic Building I": "way/135311802",
     "Sir Run Run Shaw Hall": "way/107139030",
+    "Morningside College": "way/230185998",
 }
 
 OTHER_PREFIXES = (
-    "Town Centre", "Morningside College", "Chung Chi College Lib", "Lai Chan Pui Ngong",
+    "Town Centre", "Chung Chi College Lib", "Lai Chan Pui Ngong",
     "T.Y.Wong Hall", "Lee W.S Col,", "Tennis Court", "Haddon-Cave Tennis Court",
     "Multi-purpose Halls,JCPG",
 )

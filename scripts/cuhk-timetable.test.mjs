@@ -31,3 +31,10 @@ test("mapped venue IDs resolve to CUHK buildings and unmapped venues remain in d
   const meetings = meetingsByVenue(snapshot, "2026-11-23", null).get(venue);
   assert.ok(meetings?.some(meeting => meeting.location === "Town Centre Sapphire Room" && meeting.code === "DOTE5110"));
 });
+
+test("Morningside College rooms are listed under its map building", () => {
+  const venue = snapshot.venues.findIndex(([, id]) => id === "way/230185998");
+  const rooms = meetingsByVenue(snapshot, "2026-09-11", "12:00").get(venue)
+    ?.filter(meeting => meeting.code === "GEMC1001").map(meeting => meeting.location);
+  assert.deepEqual(rooms?.sort(), ["Morningside College Room 1", "Morningside College Room 2", "Morningside College Room 3"]);
+});
