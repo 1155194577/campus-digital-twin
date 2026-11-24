@@ -46,6 +46,14 @@ dialog.modal-backdrop::backdrop{background:#1c302b66;backdrop-filter:blur(5px)}
 .mobile-export{display:none}
 .campus-map-source{display:flex;align-items:center;gap:5px;padding:10px 17px;color:#4d5952;font-size:10px;flex-shrink:0}
 .campus-map-source:hover{color:var(--accent)}
+.map-surface{position:absolute;inset:0;overflow:hidden}
+@media(max-width:650px){
+  .main-workspace:has(.campus-map-view:not([hidden]) .transit-card){height:auto;max-height:none}
+  .viewer:has(.campus-map-view:not([hidden]) .transit-card){display:flex;flex-direction:column;overflow:auto}
+  .campus-map-view:not([hidden]):has(.transit-card){position:relative;flex:1;display:grid;grid-template-rows:minmax(375px,1fr) auto}
+  .campus-map-view:has(.transit-card) .map-surface{position:relative}
+  .transit-card{position:static;width:auto;max-width:none;border-radius:0;border:0;border-top:1px solid var(--border);background:#fff;box-shadow:none}
+}
 .station-exits{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin:12px 0}
 .station-exits button{height:30px;padding:0 3px;font-size:10px}
 .station-exits button[aria-pressed=true]{border-color:var(--accent);background:#edf3ff;color:#1b4ba6}
