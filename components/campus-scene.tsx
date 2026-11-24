@@ -218,9 +218,10 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     const radius = Math.max(110, Math.hypot(size.x, size.z) * .6) / (Math.tan(THREE.MathUtils.degToRad(s.camera.fov / 2)) * Math.min(1, s.camera.aspect));
     s.focus = undefined;
     s.controls.target.copy(center);
-    s.camera.position.copy(center).add(new THREE.Vector3(0, radius, .01));
+    const offset = view === "top" ? new THREE.Vector3(0, radius, .01) : new THREE.Vector3(.5, .72, .65).normalize().multiplyScalar(radius);
+    s.camera.position.copy(center).add(offset);
     s.controls.update();
-  }, [campus, modelFile, routeStart, routeDestination, routePath]);
+  }, [campus, modelFile, routeStart, routeDestination, routePath, view]);
   useEffect(()=>{
     const s=state.current; if(!s||!action||lastAction.current===action)return;
     lastAction.current=action;
