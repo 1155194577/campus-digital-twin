@@ -1,7 +1,7 @@
 import type { Feature, Point } from "./types";
 
 type TransitPoint = Pick<Feature, "id" | "name" | "localName" | "lat" | "lon">;
-type StationExit = TransitPoint & { kind: "exit"; exit: string; localName: string };
+type StationExit = TransitPoint & { kind: "exit"; exit: string; localName: string; source: typeof railwayEntranceAttribution };
 export type TransitPlace = (TransitPoint & { kind: "station" }) | StationExit;
 
 export type CampusPlace = Feature | TransitPlace;
@@ -9,6 +9,11 @@ export type CampusPlace = Feature | TransitPlace;
 export const cuhkCampusMap = "https://www.cuhk.edu.hk/english/campus/cuhk-campus-map.html";
 export const universityStationMap = "https://www.mtr.com.hk/archive/en/services/maps/uni.pdf";
 export const railwayEntranceSource = "https://portal.csdi.gov.hk/geoportal/?datasetId=landsd_rcd_1637223748322_25497";
+const railwayEntranceAttribution = {
+  attribution: "iB1000 Digital Topographic Map (RailwayEntrance), CSDI Portal, Lands Department, Government of the Hong Kong SAR. © Government of the Hong Kong SAR and the relevant organisations.",
+  url: railwayEntranceSource,
+  terms: "https://portal.csdi.gov.hk/csdi-webpage/doc/TNC",
+};
 export const universityStation: TransitPlace = {
   id: "node/5098496689",
   kind: "station",
@@ -31,6 +36,7 @@ export const universityExits = ([
   localName: `大學站 ${exit} 出口`,
   lat,
   lon,
+  source: railwayEntranceAttribution,
 }));
 
 // Teaching abbreviations and grid references from the official CUHK Campus Map.

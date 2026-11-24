@@ -1,7 +1,7 @@
 import type { Campus, Feature, Point } from "./types";
 import type { TransitPlace } from "./campus-places";
 
-export type Endpoint = { point: Point; featureId?: string };
+export type Endpoint = { point: Point; featureId?: string; source?: { attribution: string; url: string; terms: string } };
 type Segment = { from: string; to: string; a: Point; b: Point; length: number; way: Feature };
 type Edge = { to: string; length: number; segment: Segment };
 type WalkingGraph = { segments: Segment[]; edges: Map<string, Edge[]>; points: Map<string, Point> };
@@ -42,7 +42,13 @@ export function parseEndpoint(campus: Campus, value: string | null, transitPlace
   const toLocal = (latitude: number, longitude: number): Point =>
     [(longitude - centerLon) * longitudeScale(centerLat), (centerLat - latitude) * metersPerDegree];
   const transit = campus.id === "cuhk" ? transitPlaces.find(place => place.id === value) : undefined;
-  if (transit) return { featureId: transit.id, point: toLocal(transit.lat, transit.lon) };
+  if (transit) {
+    return {
+      featureId: transit.id,
+      point: toLocal(transit.lat, transit.lon),
+      ...(transit.kind === "exit" ? { source: transit.source } : {}),
+    };
+  }
   const feature = campus.features.find(f => f.id === value);
   if (feature) return featureEndpoint(feature);
   if (!value.startsWith("pt:")) return null;

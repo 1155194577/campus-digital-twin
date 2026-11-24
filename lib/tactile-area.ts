@@ -102,6 +102,7 @@ function boundedFeature(feature: Feature, center: Point, bounds: Bounds): GeoFea
 
 export function tactileGeoJson(campus: Campus, area: Area, endpoints: [Endpoint | null, Endpoint | null], route: WalkingRoute | null) {
   const features: GeoFeature[] = [];
+  const attribution = new Set(["© OpenStreetMap contributors (ODbL)"]);
   for (const feature of campus.features) {
     const bounded = boundedFeature(feature, campus.center, area.local);
     if (bounded) features.push(bounded);
@@ -111,9 +112,14 @@ export function tactileGeoJson(campus: Campus, area: Area, endpoints: [Endpoint 
     if (geometry) features.push({ type: "Feature", geometry, properties: { kind: "coastline" } });
   }
   endpoints.forEach((endpoint, index) => {
-    if (endpoint) features.push({
+    if (!endpoint) return;
+    if (endpoint.source) {
+      const { attribution: credit, url, terms } = endpoint.source;
+      attribution.add(`${credit} Source: ${url} Terms: ${terms}`);
+    }
+    features.push({
       type: "Feature", geometry: { type: "Point", coordinates: toWgs84(campus.center, endpoint.point) },
-      properties: { kind: index === 0 ? "route_start" : "route_destination", sourceFeatureId: endpoint.featureId },
+      properties: { kind: index === 0 ? "route_start" : "route_destination", sourceFeatureId: endpoint.featureId, ...(endpoint.source ? { source: endpoint.source } : {}) },
     });
   });
   if (route && route.points.length > 1) features.push({
@@ -121,7 +127,7 @@ export function tactileGeoJson(campus: Campus, area: Area, endpoints: [Endpoint 
     properties: { kind: "mapped_route", lengthMeters: route.length, steps: route.steps, crossings: route.crossings, accessibilityVerified: false },
   });
   return {
-    type: "FeatureCollection", bbox: area.bbox, attribution: "© OpenStreetMap contributors (ODbL)",
+    type: "FeatureCollection", bbox: area.bbox, attribution: [...attribution].join(" "),
     snapshot: campus.fetchedAt, features,
   };
 }

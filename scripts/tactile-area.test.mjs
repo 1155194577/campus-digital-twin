@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { railwayEntranceSource, universityExits, universityStation } from "../lib/campus-places.ts";
 import { formatBounds, tactileArea, tactileCommand, tactileGeoJson } from "../lib/tactile-area.ts";
+import { parseEndpoint } from "../lib/walking-route.ts";
 
 const center = [22.42, 114.21];
 const feature = (id, kind, points) => ({ id, kind, name: id, points });
@@ -88,4 +90,25 @@ test("exports polygon exteriors counterclockwise without changing source rings",
     assert.ok((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) > 0);
   }
   assert.deepEqual(clockwise, [[0, 0], [10, 0], [10, 10], [0, 0]]);
+});
+
+test("credits the Lands Department dataset and terms only when exporting a station exit", () => {
+  const campus = { id: "cuhk", center, features: [] };
+  const transit = [universityStation, ...universityExits];
+  const exit = parseEndpoint(campus, "landsd/1810002251", transit);
+  const station = parseEndpoint(campus, universityStation.id, transit);
+  const area = tactileArea(center, [exit.point, station.point]);
+  const terms = "https://portal.csdi.gov.hk/csdi-webpage/doc/TNC";
+  const data = tactileGeoJson(campus, area, [station, exit], null);
+  assert.match(data.attribution, /© OpenStreetMap contributors \(ODbL\)/);
+  assert.match(data.attribution, /Lands Department, Government of the Hong Kong SAR/);
+  assert.ok(data.attribution.includes(railwayEntranceSource));
+  assert.ok(data.attribution.includes(terms));
+  assert.equal(data.features[1].properties.sourceFeatureId, "landsd/1810002251");
+  assert.equal(data.features[1].properties.source.url, railwayEntranceSource);
+  assert.equal(data.features[1].properties.source.terms, terms);
+  assert.equal(data.features[0].properties.source, undefined);
+
+  const osmOnly = tactileGeoJson(campus, area, [station, null], null);
+  assert.equal(osmOnly.attribution, "© OpenStreetMap contributors (ODbL)");
 });
