@@ -76,19 +76,19 @@ function fitModel(s: SceneState, upAxis: UpAxis, view: ViewMode): ModelInfo | nu
   return { parts: pivot.children.length, triangles: Math.round(triangles), size: [size.x, size.z, size.y].map(v => v < maxSize * 1e-9 ? 0 : v) as ModelInfo["size"] };
 }
 
-export default function CampusScene({ campus, layers, selected, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFiles, upAxis, active, onError, onModelError, onReady, onModelInfo }: {
+export default function CampusScene({ campus, layers, selected, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFiles, upAxis, active, onError, onModelError, onReady, onModelInfo, onHeadingChange }: {
   campus: Campus; layers: Layers; selected: string | null; onSelect: (f: Feature | null) => void;
   onMapPoint?: (point: Point) => void; routeStart?: Point; routeDestination?: Point; routePath?: Point[];
   view: ViewMode; action: ViewerAction | null; modelFiles: File[]; upAxis: UpAxis; active: boolean;
-  onError: (error: string) => void; onModelError: () => void; onReady: () => void; onModelInfo: (info: ModelInfo | null) => void;
+  onError: (error: string) => void; onModelError: () => void; onReady: () => void; onModelInfo: (info: ModelInfo | null) => void; onHeadingChange: (degrees: number) => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const state = useRef<SceneState | null>(null);
   const lastAction = useRef<ViewerAction | null>(null);
-  const callbacks = useRef({ onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo });
+  const callbacks = useRef({ onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo, onHeadingChange });
   const upAxisRef = useRef(upAxis);
   const viewRef = useRef(view);
-  useEffect(() => { callbacks.current = { onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo }; }, [onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo]);
+  useEffect(() => { callbacks.current = { onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo, onHeadingChange }; }, [onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo, onHeadingChange]);
 
   useEffect(() => {
     if (!container.current) return;
@@ -114,6 +114,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.listenToKeyEvents(renderer.domElement);
     controls.keyRotateSpeed = 12;
+    const updateNorthHeading = () => callbacks.current.onHeadingChange(THREE.MathUtils.radToDeg(controls.getAzimuthalAngle()));
     controls.enableDamping = true; controls.dampingFactor = .08;
     controls.maxPolarAngle = Math.PI / 2.15;
     controls.minDistance = 40; controls.maxDistance = span * 3.2;
@@ -206,6 +207,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
       const moved = controls.update();
       if (dirty || moved) {
         renderer.render(scene,camera);
+        updateNorthHeading();
         if (!ready) { ready = true; callbacks.current.onReady(); }
         dirty = false;
       }
@@ -276,6 +278,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     viewRef.current=view;
     const s=state.current; if(!s)return;
     const distance=s.camera.position.distanceTo(s.controls.target);
+    s.renderer.domElement.setAttribute("aria-label", `Interactive 3D campus map. Drag to ${view==="top"?"pan":"orbit"}, scroll to zoom, click buildings to inspect. Use the adjacent buttons for camera controls.`);
     s.controls.enableRotate=view!=="top";
     s.controls.mouseButtons.LEFT=view==="top"?THREE.MOUSE.PAN:THREE.MOUSE.ROTATE;
     s.controls.touches.ONE=view==="top"?THREE.TOUCH.PAN:THREE.TOUCH.ROTATE;

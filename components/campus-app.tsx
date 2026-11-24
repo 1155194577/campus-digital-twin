@@ -58,6 +58,7 @@ export default function CampusApp() {
   const search=useRef<HTMLInputElement>(null);
   const detailsHeading=useRef<HTMLHeadingElement>(null);
   const detailsTrigger=useRef<HTMLButtonElement|null>(null);
+  const northNeedle=useRef<SVGPathElement>(null);
   useEffect(()=>{
     const params = new URLSearchParams(window.location.search);
     const requestedCampus = campuses.find(item => item.id === params.get("campus"));
@@ -116,6 +117,9 @@ export default function CampusApp() {
   const ready=useCallback(()=>setSceneReady(true),[]);
   const showError=useCallback((message:string)=>{setError(message);setSceneReady(true);},[]);
   const clearFailedModel=useCallback(()=>setModelFiles([]),[]);
+  const showNorthHeading=useCallback((degrees:number)=>{
+    northNeedle.current?.setAttribute("transform",`rotate(${degrees} 17 17)`);
+  },[]);
   const putEndpoint=useCallback((key:string)=>{
     if (choosing === "start") {
       setStartKey(key);
@@ -231,10 +235,11 @@ export default function CampusApp() {
           <div className={`viewer ${dragging?"dragging":""} ${planning&&start&&destination&&tab==="explore"?"route-shown":""}`} ref={viewer} onDragOver={e=>{if(!e.dataTransfer.types.includes("Files"))return;e.preventDefault();setDragging(true);}} onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node|null))setDragging(false);}} onDrop={e=>{e.preventDefault();setDragging(false);chooseModels(e.dataTransfer.files);}}>
             {showPrint&&<PrintComparison campus={campus} layers={layers} selected={selected}/>}
             <div className="campus-map-view" hidden={Boolean(showPrint)}>
-            <CampusScene campus={loading?null:activeCampus} layers={layers} selected={planning?null:selected?.id??null} onSelect={select} onMapPoint={!showPrint&&planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFiles={modelFiles} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready} onModelInfo={setModelInfo}/>
+            <CampusScene campus={loading?null:activeCampus} layers={layers} selected={planning?null:selected?.id??null} onSelect={select} onMapPoint={!showPrint&&planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFiles={modelFiles} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready} onModelInfo={setModelInfo} onHeadingChange={showNorthHeading}/>
             {(loading||!sceneReady)&&!error&&<div className="loading-overlay" role="status"><LoaderCircle className="spin" size={28}/><strong>{modelFiles.length?"Opening your model":"Bringing campus into focus"}</strong><span>Preparing your 3D view…</span></div>}
             {error&&<div className="error-banner" role="alert"><Info size={17}/><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError("")}><X size={16}/></button></div>}
             <div className="map-title"><span className="map-kicker">{modelFiles.length?"LOCAL MODEL":"CAMPUS DIGITAL TWIN"}</span><h2 id="map-title">{modelName??current.name}</h2><p>{modelFiles.length?"Your geometry. A different perspective.":campus?.subtitle}</p></div>
+            <div className="compass" role="img" aria-label="North indicator" style={modelFiles.length?{visibility:"hidden"}:undefined}><span>N</span><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="15" fill="none" stroke="currentColor" strokeWidth="1.5"/><path ref={northNeedle} d="M17 6L22 25L17 21L12 25Z" fill="currentColor"/></svg></div>
             <div className="map-controls"><button title="Zoom in" aria-label="Zoom in" onClick={()=>command("zoomIn")}><Plus size={19}/></button><button title="Zoom out" aria-label="Zoom out" onClick={()=>command("zoomOut")}><Minus size={19}/></button><span/><button title="Reset view" aria-label="Reset view" onClick={()=>{setView("perspective");command("reset");}}><RotateCcw size={17}/></button><button title="Fullscreen" aria-label="Toggle fullscreen" onClick={()=>{if(document.fullscreenElement)void document.exitFullscreen();else void viewer.current?.requestFullscreen().catch(()=>setError("Fullscreen is unavailable in this browser."));}}><Expand size={17}/></button></div>
             {selected&&!planning&&!modelFiles.length&&<article className="feature-card"><div className="feature-card-top"><span><Building2 size={15}/>BUILDING DETAILS</span><button className="icon-button" aria-label="Close building details" onClick={closeDetails}><X size={16}/></button></div><h3 ref={detailsHeading} tabIndex={-1}>{selected.name||"Mapped building"}</h3>{selected.localName&&selected.localName!==selected.name&&<p className="local-name">{selected.localName}</p>}<div className="feature-facts"><div><span>Height {selected.heightEstimated?"(estimated)":"(mapped)"}</span><strong>{selected.height.toFixed(1)}<small> m</small></strong></div><div><span>Footprint</span><strong>{selected.area?.toLocaleString()}<small> m²</small></strong></div></div><p className="height-note">{selected.heightEstimated?"Height inferred from levels, or a 14 m default. Not survey-grade.":"Height supplied by OpenStreetMap contributors."}</p><button className="primary-button" onClick={()=>command("focus")}><Crosshair size={15}/>Focus building</button><a className="osm-link" href={`https://www.openstreetmap.org/${selected.id.split("/").slice(0,2).join("/")}`} target="_blank" rel="noreferrer">View source feature<ArrowUpRight size={12}/></a></article>}
             <p className="scene-keyboard-help" id="scene-keyboard-help">Arrow keys pan. {view==="perspective"&&"Shift + arrow keys orbit. "}Tab to the zoom and reset controls.</p>
