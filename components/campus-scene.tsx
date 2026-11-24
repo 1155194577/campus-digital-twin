@@ -8,14 +8,20 @@ import { partColors } from "@/lib/types";
 import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 import { createMapClickGesture } from "@/lib/map-click-gesture";
 
+type CameraPose = { position: THREE.Vector3; target: THREE.Vector3 };
+
 type SceneState = {
   scene: THREE.Scene; camera: THREE.PerspectiveCamera; renderer: THREE.WebGLRenderer;
   controls: OrbitControls; groups: Record<keyof Layers, THREE.Group>; buildings: THREE.Mesh[];
   model: THREE.Group; span: number; focus?: THREE.Vector3; initial: THREE.Vector3; invalidate: () => void;
   route: THREE.Group;
   setActive: (active: boolean) => void;
-  view: ViewMode; perspectiveDistance?: number; campusBounds: THREE.Box3; modelBounds?: THREE.Box3;
+  view: ViewMode; perspectivePose?: CameraPose; campusBounds: THREE.Box3; modelBounds?: THREE.Box3;
 };
+
+function getCameraPose(s: SceneState): CameraPose {
+  return { position: s.camera.position.clone(), target: s.controls.target.clone() };
+}
 
 function fitTopView(s: SceneState) {
   const bounds = s.modelBounds ?? s.campusBounds;
@@ -88,7 +94,7 @@ function fitModel(s: SceneState, upAxis: UpAxis): ModelInfo | null {
   s.modelBounds = box.translate(offset);
   s.controls.target.set(0, (box.max.y - box.min.y) / 2, 0); s.camera.position.copy(s.initial); s.focus = undefined;
   if (s.view === "top") {
-    s.perspectiveDistance = s.camera.position.distanceTo(s.controls.target);
+    s.perspectivePose = getCameraPose(s);
     fitTopView(s);
   } else { s.controls.update(); s.invalidate(); }
   let triangles = 0;
@@ -327,12 +333,15 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     s.controls.enableRotate=view!=="top";
     s.controls.mouseButtons.LEFT=view==="top"?THREE.MOUSE.PAN:THREE.MOUSE.ROTATE;
     s.controls.touches.ONE=view==="top"?THREE.TOUCH.PAN:THREE.TOUCH.ROTATE;
-    if (view === "top") { s.perspectiveDistance = distance; fitTopView(s); return; }
+    if (view === "top") { s.perspectivePose = getCameraPose(s); fitTopView(s); return; }
     s.controls.maxDistance = s.span * 3.2;
     s.camera.far = s.span * 14;
     s.camera.updateProjectionMatrix();
-    s.camera.position.copy(s.controls.target).add(new THREE.Vector3(.5,.72,.65).normalize().multiplyScalar(s.perspectiveDistance ?? distance));
-    s.perspectiveDistance = undefined;
+    if (s.perspectivePose) {
+      s.controls.target.copy(s.perspectivePose.target);
+      s.camera.position.copy(s.perspectivePose.position);
+      s.perspectivePose = undefined;
+    } else s.camera.position.copy(s.controls.target).add(new THREE.Vector3(.5,.72,.65).normalize().multiplyScalar(distance));
     s.controls.update();
     s.invalidate();
   },[view,campus]);
