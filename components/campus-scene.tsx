@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { Campus, Feature, Layers, Point, ViewMode, ViewerAction } from "@/lib/types";
+import { createMapClickGesture } from "@/lib/map-click-gesture";
 
 type SceneState = {
   scene: THREE.Scene; camera: THREE.PerspectiveCamera; renderer: THREE.WebGLRenderer;
@@ -122,10 +123,9 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     const resize = () => { const { width, height } = host.getBoundingClientRect(); if (!width || !height) return; renderer.setSize(width,height); camera.aspect = width/height; camera.updateProjectionMatrix(); };
     const observer = new ResizeObserver(resize); observer.observe(host); resize();
     const raycaster = new THREE.Raycaster();
-    let start = [0,0];
-    const down = (event: PointerEvent) => { start = [event.clientX,event.clientY]; };
+    const gesture = createMapClickGesture();
     const up = (event: PointerEvent) => {
-      if (Math.hypot(event.clientX-start[0], event.clientY-start[1]) > 5 || model.children.length) return;
+      if (!gesture.up(event) || model.children.length) return;
       const rect = renderer.domElement.getBoundingClientRect();
       raycaster.setFromCamera(new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1),camera);
       const hit = groups.building.visible ? raycaster.intersectObjects(buildings,false)[0] : null;
@@ -135,8 +135,9 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
         if (ground && Math.abs(ground.x) <= campus.width / 2 && Math.abs(ground.z) <= campus.depth / 2) callbacks.current.onMapPoint([ground.x, ground.z]);
       } else callbacks.current.onSelect(null);
     };
-    renderer.domElement.addEventListener("pointerdown", down);
+    renderer.domElement.addEventListener("pointerdown", gesture.down);
     renderer.domElement.addEventListener("pointerup", up);
+    renderer.domElement.addEventListener("pointercancel", gesture.cancel);
     const lost = (event: Event) => { event.preventDefault(); callbacks.current.onError("The 3D graphics connection was interrupted. Reload the page to reconnect."); };
     renderer.domElement.addEventListener("webglcontextlost",lost);
     let frame = 0;
@@ -152,7 +153,8 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     render(); callbacks.current.onReady();
     return () => {
       cancelAnimationFrame(frame); observer.disconnect(); controls.dispose();
-      renderer.domElement.removeEventListener("pointerdown",down); renderer.domElement.removeEventListener("pointerup",up);
+      renderer.domElement.removeEventListener("pointerdown",gesture.down); renderer.domElement.removeEventListener("pointerup",up);
+      renderer.domElement.removeEventListener("pointercancel",gesture.cancel);
       renderer.domElement.removeEventListener("webglcontextlost",lost);
       disposeObject(scene); renderer.dispose(); host.removeChild(renderer.domElement); state.current=null;
     };
