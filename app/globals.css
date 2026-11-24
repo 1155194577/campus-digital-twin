@@ -12,6 +12,7 @@
 .route-badge.destination{background:#841d51}
 .route-limitations{color:#304e49}
 .main-workspace.planning-workspace{height:auto;max-height:none}
+.planning-workspace .building-list{max-height:clamp(130px,28vh,340px)}
 .planning-workspace .viewer{min-height:clamp(375px,46vh,605px)}
 .viewer.route-shown .map-title{display:none}
 
