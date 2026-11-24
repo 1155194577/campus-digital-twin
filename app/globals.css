@@ -146,6 +146,10 @@ dialog.modal-backdrop::backdrop{background:#1c302b66;backdrop-filter:blur(5px)}
   .main-workspace:not(.planning-workspace) .map-section:has(>.route-toolbar)>:is(.viewer,.stats-strip){grid-column:1/-1}
 }
 
+@media(min-width:440px) and (max-width:719px) and (max-height:500px) and (orientation:landscape){
+  .main-workspace:not(.planning-workspace) .map-section:has(.timetable-toggle){grid-template-columns:minmax(0,1fr)}
+}
+
 @media(max-width:650px), (max-width:950px) and (max-height:500px) and (orientation:landscape){
   .viewer:has(.campus-map-view:not([hidden]) .transit-card){height:auto}
   .viewer:fullscreen:has(.campus-map-view:not([hidden]) .transit-card){overflow-y:auto}
