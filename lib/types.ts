@@ -4,8 +4,11 @@ export type Feature = {
   name: string; localName?: string; points: Point[]; height: number;
   heightEstimated: boolean; levels?: string; category: string; area?: number;
   lat: number; lon: number;
+  walkNodes?: string[];
+  crossing?: boolean;
+  tactilePaving?: string;
 };
-export type Campus = { id: string; name: string; subtitle: string; center: Point; width: number; depth: number; fetchedAt: string; features: Feature[] };
+export type Campus = { id: string; name: string; subtitle: string; center: Point; width: number; depth: number; fetchedAt: string; features: Feature[]; walkDetails?: Record<string, { crossing?: boolean; tactilePaving?: string }> };
 export type Layers = { building: boolean; road: boolean; park: boolean; water: boolean };
 export type ViewMode = "perspective" | "top";
 export type ViewerAction = { type: "zoomIn" | "zoomOut" | "reset" | "focus"; at: number };

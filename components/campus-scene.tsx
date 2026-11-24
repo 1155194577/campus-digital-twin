@@ -3,18 +3,19 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import type { Campus, Feature, Layers, ViewMode, ViewerAction } from "@/lib/types";
+import type { Campus, Feature, Layers, Point, ViewMode, ViewerAction } from "@/lib/types";
 
 type SceneState = {
   scene: THREE.Scene; camera: THREE.PerspectiveCamera; renderer: THREE.WebGLRenderer;
   controls: OrbitControls; groups: Record<keyof Layers, THREE.Group>; buildings: THREE.Mesh[];
   model: THREE.Group; span: number; focus?: THREE.Vector3; initial: THREE.Vector3;
+  route: THREE.Group;
 };
 
 function disposeObject(object: THREE.Object3D) {
   object.traverse(child => {
-    if (child instanceof THREE.Mesh || child instanceof THREE.Line) {
-      child.geometry?.dispose();
+    if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.Sprite) {
+      if (!(child instanceof THREE.Sprite)) child.geometry?.dispose();
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.forEach((m: THREE.Material) => {
         for (const value of Object.values(m)) if (value instanceof THREE.Texture) value.dispose();
@@ -24,16 +25,40 @@ function disposeObject(object: THREE.Object3D) {
   });
 }
 
-export default function CampusScene({ campus, layers, selected, onSelect, view, action, modelFile, onError, onModelError, onReady }: {
+function endpointMarker(point: Point, label: string, color: string, size: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 64;
+  const context = canvas.getContext("2d")!;
+  context.beginPath();
+  context.arc(32, 32, 28, 0, 2 * Math.PI);
+  context.fillStyle = color;
+  context.fill();
+  context.lineWidth = 4;
+  context.strokeStyle = "white";
+  context.stroke();
+  context.fillStyle = "white";
+  context.font = "bold 32px sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(label, 32, 33);
+  const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, depthWrite: false, toneMapped: false }));
+  marker.position.set(point[0], 4, point[1]);
+  marker.scale.setScalar(size);
+  marker.renderOrder = 2;
+  return marker;
+}
+
+export default function CampusScene({ campus, layers, selected, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFile, onError, onModelError, onReady }: {
   campus: Campus; layers: Layers; selected: string | null; onSelect: (f: Feature | null) => void;
+  onMapPoint?: (point: Point) => void; routeStart?: Point; routeDestination?: Point; routePath?: Point[];
   view: ViewMode; action: ViewerAction | null; modelFile: File | null;
   onError: (error: string) => void; onModelError: () => void; onReady: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const state = useRef<SceneState | null>(null);
   const lastAction = useRef<ViewerAction | null>(null);
-  const callbacks = useRef({ onSelect, onError, onModelError, onReady });
-  useEffect(() => { callbacks.current = { onSelect, onError, onModelError, onReady }; }, [onSelect, onError, onModelError, onReady]);
+  const callbacks = useRef({ onSelect, onMapPoint, onError, onModelError, onReady });
+  useEffect(() => { callbacks.current = { onSelect, onMapPoint, onError, onModelError, onReady }; }, [onSelect, onMapPoint, onError, onModelError, onReady]);
 
   useEffect(() => {
     if (!container.current) return;
@@ -90,8 +115,10 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
         mesh.add(edges);
       }
     }
-    const model = new THREE.Group(); scene.add(model);
-    state.current = { scene, camera, renderer, controls, groups, buildings, model, span, initial };
+    const model = new THREE.Group();
+    const route = new THREE.Group();
+    scene.add(model, route);
+    state.current = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial };
     const resize = () => { const { width, height } = host.getBoundingClientRect(); if (!width || !height) return; renderer.setSize(width,height); camera.aspect = width/height; camera.updateProjectionMatrix(); };
     const observer = new ResizeObserver(resize); observer.observe(host); resize();
     const raycaster = new THREE.Raycaster();
@@ -102,7 +129,11 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
       const rect = renderer.domElement.getBoundingClientRect();
       raycaster.setFromCamera(new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1),camera);
       const hit = groups.building.visible ? raycaster.intersectObjects(buildings,false)[0] : null;
-      callbacks.current.onSelect(hit ? hit.object.userData.feature : null);
+      if (hit) callbacks.current.onSelect(hit.object.userData.feature);
+      else if (callbacks.current.onMapPoint) {
+        const ground = raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+        if (ground && Math.abs(ground.x) <= campus.width / 2 && Math.abs(ground.z) <= campus.depth / 2) callbacks.current.onMapPoint([ground.x, ground.z]);
+      } else callbacks.current.onSelect(null);
     };
     renderer.domElement.addEventListener("pointerdown", down);
     renderer.domElement.addEventListener("pointerup", up);
@@ -150,6 +181,46 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
     s.camera.position.copy(s.controls.target).add(view==="top" ? new THREE.Vector3(0,distance,.01) : new THREE.Vector3(.5,.72,.65).normalize().multiplyScalar(distance));
     s.controls.update();
   },[view,campus]);
+  useEffect(() => {
+    const s = state.current;
+    if (!s) return;
+    disposeObject(s.route);
+    s.route.clear();
+    if (modelFile) return;
+    const size = s.span * .032;
+    if (routeStart) s.route.add(endpointMarker(routeStart, "A", "#073f75", size));
+    if (routeDestination) s.route.add(endpointMarker(routeDestination, "B", "#841d51", size));
+    if (routePath && routePath.length > 1) {
+      const positions: number[] = [];
+      const halfWidth = s.span * .0022;
+      for (let i = 1; i < routePath.length; i++) {
+        const [x, z] = routePath[i - 1];
+        const [endX, endZ] = routePath[i];
+        const length = Math.hypot(endX - x, endZ - z);
+        const dx = (endZ - z) / length * halfWidth, dz = (x - endX) / length * halfWidth;
+        positions.push(x + dx, 3, z + dz, endX + dx, 3, endZ + dz, endX - dx, 3, endZ - dz,
+          x + dx, 3, z + dz, endX - dx, 3, endZ - dz, x - dx, 3, z - dz);
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      const path = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: "#007570", side: THREE.DoubleSide, depthTest: false, depthWrite: false, toneMapped: false }));
+      path.renderOrder = 1;
+      s.route.add(path);
+    }
+  }, [campus, modelFile, routeStart, routeDestination, routePath]);
+  useEffect(() => {
+    const s = state.current;
+    if (!s || !routeStart || !routeDestination || modelFile) return;
+    const points = [routeStart, routeDestination, ...(routePath ?? [])];
+    const box = new THREE.Box3().setFromPoints(points.map(([x, z]) => new THREE.Vector3(x, 0, z)));
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const radius = Math.max(110, Math.hypot(size.x, size.z) * .6) / (Math.tan(THREE.MathUtils.degToRad(s.camera.fov / 2)) * Math.min(1, s.camera.aspect));
+    s.focus = undefined;
+    s.controls.target.copy(center);
+    s.camera.position.copy(center).add(new THREE.Vector3(0, radius, .01));
+    s.controls.update();
+  }, [campus, modelFile, routeStart, routeDestination, routePath]);
   useEffect(()=>{
     const s=state.current; if(!s||!action||lastAction.current===action)return;
     lastAction.current=action;
