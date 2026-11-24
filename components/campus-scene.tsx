@@ -382,7 +382,7 @@ export default function CampusScene({ campus, layers, selected, showTransit, onS
     if (!selected) s.focus = undefined;
     else if (isTransitPlace(selected)) s.focus = transitPosition(selected, campus);
     else s.focus = new THREE.Vector3(selected.points.reduce((a,p)=>a+p[0],0)/selected.points.length,0,selected.points.reduce((a,p)=>a+p[1],0)/selected.points.length);
-    if (s.view === "top") s.topSelectionTarget = selectedMesh ? new THREE.Box3().setFromObject(selectedMesh).getCenter(new THREE.Vector3()) : selected&&isTransitPlace(selected) ? transitPosition(selected,campus) : undefined;
+    if (s.view === "top") s.topSelectionTarget = selectedMesh ? new THREE.Box3().setFromObject(selectedMesh).getCenter(new THREE.Vector3()) : s.focus?.clone();
     s.invalidate();
   }, [selected,campus]);
   useEffect(() => {
