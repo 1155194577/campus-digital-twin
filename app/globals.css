@@ -106,6 +106,8 @@ dialog.modal-backdrop::backdrop{background:#1c302b66;backdrop-filter:blur(5px)}
   .map-controls{top:auto;bottom:28px;right:12px;transform:none;flex-direction:row}
   .map-controls>span{width:1px;height:18px}
   .feature-card{left:auto;right:12px;bottom:86px;max-height:calc(100% - 103px)}
+  .map-section:has(.route-toolbar) .map-controls{bottom:56px}
+  .map-section:has(.route-toolbar) .feature-card{bottom:114px;max-height:calc(100% - 131px)}
 }
 
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation-duration:.01ms!important;transition:none!important}}
