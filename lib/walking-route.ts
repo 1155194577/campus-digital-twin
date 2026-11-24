@@ -5,7 +5,9 @@ type Segment = { from: string; to: string; a: Point; b: Point; length: number; w
 type Edge = { to: string; length: number; segment: Segment };
 type WalkingGraph = { segments: Segment[]; edges: Map<string, Edge[]>; points: Map<string, Point> };
 type Snap = { segment: Segment; fraction: number; point: Point; offset: number };
-type Match = { cost: number; end: Snap } & ({ start: Snap } | { last: string });
+type SnapLink = { snap: Snap; cost: number };
+type Arrival = SnapLink & { node: string; previous?: Arrival; segment?: Segment };
+type Match = { cost: number; start: Snap; end: Snap; arrival?: Arrival };
 const endpointGapWeight = 2;
 export type WalkingRoute = {
   points: Point[];
@@ -79,19 +81,21 @@ function snapCandidates(graph: WalkingGraph, point: Point) {
     const { a, b, length } = segment;
     const projection = length ? ((point[0] - a[0]) * (b[0] - a[0]) + (point[1] - a[1]) * (b[1] - a[1])) / length ** 2 : 0;
     const fraction = Math.max(0, Math.min(1, projection));
-    const snap: Point = [a[0] + fraction * (b[0] - a[0]), a[1] + fraction * (b[1] - a[1])];
+    const snap: Point = fraction === 0 ? a : fraction === 1 ? b : [a[0] + fraction * (b[0] - a[0]), a[1] + fraction * (b[1] - a[1])];
     const offset = distance(point, snap);
     if (offset <= 75) candidates.push({ segment, fraction, point: snap, offset });
   }
   return candidates;
 }
 
-function candidatesByNode(candidates: Snap[]) {
-  const byNode = new Map<string, { snap: Snap; cost: number }>();
+function linksByNode(candidates: Snap[]) {
+  const byNode = new Map<string, SnapLink[]>();
   for (const snap of candidates) {
     for (const [id, point] of [[snap.segment.from, snap.segment.a], [snap.segment.to, snap.segment.b]] as const) {
       const cost = endpointGapWeight * snap.offset + distance(snap.point, point);
-      if (cost < (byNode.get(id)?.cost ?? Infinity)) byNode.set(id, { snap, cost });
+      const links = byNode.get(id) ?? [];
+      links.push({ snap, cost });
+      byNode.set(id, links);
     }
   }
   return byNode;
@@ -100,90 +104,84 @@ function candidatesByNode(candidates: Snap[]) {
 export function findWalkingRoute(graph: WalkingGraph, details: Campus["walkDetails"], start: Point, destination: Point): WalkingRoute | null {
   const starts = snapCandidates(graph, start);
   const destinations = snapCandidates(graph, destination);
-  const route = routeBetweenSnaps(graph, details, starts, destinations);
-  if (!route || route.length > 0 || distance(start, destination) === 0) return route;
-
-  const closest = (candidates: Snap[]) => candidates.reduce((a, b) => a.offset <= b.offset ? a : b);
-  const nearestStart = closest(starts), nearestEnd = closest(destinations);
-  if (distance(nearestStart.point, nearestEnd.point) > 0) {
-    const nearestRoute = routeBetweenSnaps(graph, details, [nearestStart], [nearestEnd]);
-    if (nearestRoute?.length) return nearestRoute;
-  }
-
-  let best: WalkingRoute | null = null;
-  let bestCost = Infinity;
-  const nearestEndCost = endpointGapWeight * nearestEnd.offset;
-  for (const snap of starts.sort((a, b) => a.offset - b.offset)) {
-    if (endpointGapWeight * snap.offset + nearestEndCost >= bestCost) break;
-    const distinctEnds = destinations.filter(end => distance(snap.point, end.point) > 0);
-    const candidate = routeBetweenSnaps(graph, details, [snap], distinctEnds);
-    if (!candidate?.length) continue;
-    const cost = candidate.length + endpointGapWeight * (candidate.offsets[0] + candidate.offsets[1]);
-    if (cost < bestCost) { best = candidate; bestCost = cost; }
-  }
-  return best;
-}
-
-function routeBetweenSnaps(graph: WalkingGraph, details: Campus["walkDetails"], starts: Snap[], destinations: Snap[]): WalkingRoute | null {
   if (!starts.length || !destinations.length) return null;
-  const startNodes = candidatesByNode(starts);
-  const endNodes = candidatesByNode(destinations);
+  const allowSharedSnap = distance(start, destination) === 0;
+  const usable = (a: Snap, b: Snap) => allowSharedSnap || distance(a.point, b.point) > 0;
+  const endNodes = linksByNode(destinations);
   const endSegments = new Map(destinations.map(snap => [snap.segment, snap]));
-  const frontier = new Map([...startNodes].map(([node, candidate]) => [node, candidate.cost]));
-  const visited = new Set<string>();
-  const previous = new Map<string, { from: string; segment: Segment }>();
+  const frontier = new Map<string, Arrival[]>();
+  const settled = new Map<string, Snap[]>();
+  const labelsPerNode = allowSharedSnap ? 1 : 2;
+
+  function offer(arrival: Arrival) {
+    const visited = settled.get(arrival.node) ?? [];
+    if (visited.length === labelsPerNode || visited.some(snap => distance(snap.point, arrival.snap.point) === 0)) return;
+    const queue = frontier.get(arrival.node) ?? [];
+    const sameOrigin = queue.findIndex(item => distance(item.snap.point, arrival.snap.point) === 0);
+    if (sameOrigin >= 0) {
+      if (queue[sameOrigin].cost <= arrival.cost) return;
+      queue.splice(sameOrigin, 1);
+    }
+    queue.push(arrival);
+    queue.sort((a, b) => a.cost - b.cost);
+    // Any destination snap can exclude at most one origin position.
+    queue.length = Math.min(queue.length, labelsPerNode - visited.length);
+    frontier.set(arrival.node, queue);
+  }
+
+  for (const [node, links] of linksByNode(starts)) {
+    for (const link of links) offer({ ...link, node });
+  }
   let best: Match | null = null;
   for (const a of starts) {
     const b = endSegments.get(a.segment);
-    if (!b) continue;
+    if (!b || !usable(a, b)) continue;
     const cost = distance(a.point, b.point) + endpointGapWeight * (a.offset + b.offset);
     if (cost < (best?.cost ?? Infinity)) best = { cost, start: a, end: b };
   }
   while (frontier.size) {
-    let node = "";
-    let length = Infinity;
-    for (const [candidate, cost] of frontier) {
-      if (cost < length) { node = candidate; length = cost; }
+    let current: Arrival | undefined;
+    for (const [candidate] of frontier.values()) {
+      if (!current || candidate.cost < current.cost) current = candidate;
     }
-    if (length >= (best?.cost ?? Infinity)) break;
-    frontier.delete(node);
-    visited.add(node);
-    const end = endNodes.get(node);
-    if (end && length + end.cost < (best?.cost ?? Infinity)) best = { cost: length + end.cost, end: end.snap, last: node };
-    for (const edge of graph.edges.get(node) ?? []) {
-      const next = length + edge.length;
-      if (!visited.has(edge.to) && next < (frontier.get(edge.to) ?? Infinity)) {
-        frontier.set(edge.to, next);
-        previous.set(edge.to, { from: node, segment: edge.segment });
+    if (!current || current.cost >= (best?.cost ?? Infinity)) break;
+    const { node, cost, snap } = current;
+    const queue = frontier.get(node)!;
+    queue.shift();
+    if (!queue.length) frontier.delete(node);
+    settled.set(node, [...(settled.get(node) ?? []), snap]);
+    for (const end of endNodes.get(node) ?? []) {
+      if (usable(snap, end.snap) && cost + end.cost < (best?.cost ?? Infinity)) {
+        best = { cost: cost + end.cost, start: snap, end: end.snap, arrival: current };
       }
+    }
+    for (const edge of graph.edges.get(node) ?? []) {
+      offer({ node: edge.to, cost: cost + edge.length, snap, previous: current, segment: edge.segment });
     }
   }
   if (!best) return null;
 
-  let a: Snap;
-  const b = best.end;
+  const { start: a, end: b, arrival } = best;
   const nodes: string[] = [];
   const ways = new Map<string, Feature>();
   function include(segment: Segment) { ways.set(segment.way.id, segment.way); }
-  if ("last" in best) {
-    if ((best.last === b.segment.from ? b.fraction : 1 - b.fraction) > 0) include(b.segment);
-    let node = best.last;
-    nodes.push(node);
-    let prior = previous.get(node);
-    while (prior) {
-      include(prior.segment);
-      node = prior.from;
-      nodes.push(node);
-      prior = previous.get(node);
+  if (arrival) {
+    if ((arrival.node === b.segment.from ? b.fraction : 1 - b.fraction) > 0) include(b.segment);
+    let current = arrival;
+    while (current.previous && current.segment) {
+      nodes.push(current.node);
+      include(current.segment);
+      current = current.previous;
     }
-    a = startNodes.get(node)!.snap;
-    if ((node === a.segment.from ? a.fraction : 1 - a.fraction) > 0) include(a.segment);
+    nodes.push(current.node);
+    if ((current.node === a.segment.from ? a.fraction : 1 - a.fraction) > 0) include(a.segment);
     nodes.reverse();
   } else {
-    a = best.start;
     if (distance(a.point, b.point) > 0) include(a.segment);
-    if (Math.min(a.fraction, b.fraction) === 0) nodes.push(a.segment.from);
-    if (Math.max(a.fraction, b.fraction) === 1) nodes.push(a.segment.to);
+    for (const snap of [a, b]) {
+      const node = snap.fraction === 0 ? snap.segment.from : snap.fraction === 1 ? snap.segment.to : undefined;
+      if (node !== undefined && node !== nodes[0]) nodes.push(node);
+    }
   }
   const tagged = [...ways.values(), ...nodes.map(node => details?.[node])];
   const points = [a.point, ...nodes.map(node => graph.points.get(node)!), b.point].filter((p, i, list) => !i || distance(p, list[i - 1]) > 0);

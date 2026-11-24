@@ -46,13 +46,22 @@ test("prefers mapped walking to off-network shortcuts", () => {
   assert.ok(result.offsets[0] + result.offsets[1] < 44);
 });
 
-test("walks between distinct snaps for Tin Ka Ping Building and University Library", () => {
+test("minimizes mapped distance and weighted endpoint gaps with distinct snaps on CUHK routes", () => {
   const campus = JSON.parse(readFileSync(new URL("../public/data/cuhk.json", import.meta.url), "utf8"));
-  const start = featureEndpoint(campus.features.find(f => f.id === "way/134410444")).point;
-  const destination = featureEndpoint(campus.features.find(f => f.id === "way/134410449")).point;
-  const result = findWalkingRoute(buildWalkingGraph(campus), campus.walkDetails, start, destination);
-  assert.equal(Math.round(result.length), 160);
-  assert.notDeepEqual(result.points[0], result.points.at(-1));
+  const graph = buildWalkingGraph(campus);
+  const point = id => featureEndpoint(campus.features.find(f => f.id === `way/${id}`)).point;
+  for (const [startId, endId, meters, cost] of [
+    ["751038710", "751038712", 12, 264],
+    ["134410444", "134410449", 1, 134],
+    ["421850856", "174133703", 22, 79],
+  ]) {
+    for (const [start, end] of [[startId, endId], [endId, startId]]) {
+      const result = findWalkingRoute(graph, campus.walkDetails, point(start), point(end));
+      assert.equal(Math.round(result.length), meters);
+      assert.equal(Math.round(result.length + 2 * (result.offsets[0] + result.offsets[1])), cost);
+      assert.notDeepEqual(result.points[0], result.points.at(-1));
+    }
+  }
 });
 
 test("finds distinct alternatives when the closest snaps coincide", () => {
