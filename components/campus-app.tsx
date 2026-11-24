@@ -106,7 +106,7 @@ export default function CampusApp() {
   const route=useMemo(()=>graph&&start&&destination?findWalkingRoute(graph,activeCampus?.walkDetails,start.point,destination.point):null,[graph,activeCampus,start,destination]);
   const area=activeCampus&&tactileArea(activeCampus.center,planning
     ? [...(start?[start.point]:[]), ...(destination?[destination.point]:[]), ...(route?.points??[])]
-    : selected?.points??[]);
+    : selected&&!isTransitPlace(selected)?selected.points:[]);
   const endpointLabel=(endpoint:typeof start)=>{
     if (!endpoint) return null;
     const feature = activeCampus?.features.find(f => f.id === endpoint.featureId);
