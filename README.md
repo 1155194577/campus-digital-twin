@@ -69,3 +69,17 @@ To regenerate an image, run `python scripts/render_tactile_reference.py map.stl 
 ## Deploy on Vercel
 
 Import this repository, choose the **Next.js** framework preset, and use the default install/build settings. No environment variables are needed. The initial production deployment may be created from the implementation branch while its PR remains open; merging the PR can then make `main` the ongoing production source.
+
+## Deploy on Cloudflare Workers
+
+The app can be served as static assets without a Worker script. With Node.js 22.12 or newer:
+
+```sh
+npm ci
+npm run cf-build
+npm run preview
+```
+
+Open http://localhost:8787. The Cloudflare build exports to `out/`; it does not change the default Vercel build. Run `npm run cf-build` again before previewing or deploying any changes.
+
+To enable production deployment, make sure the target account has a `workers.dev` subdomain, then add `CLOUDFLARE_API_TOKEN` (with Workers Scripts Edit permission on the target account) and `CLOUDFLARE_ACCOUNT_ID` as GitHub Actions secrets. The **Deploy to Cloudflare** workflow deploys on pushes to `main` and can also be run manually from `main` after the secrets are set. It skips deployment if either secret is missing. For a manual CLI deploy, set the same values in your shell environment, then run `npm run cf-build && npm run deploy`.

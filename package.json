@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
     "build": "next build",
+    "cf-build": "CLOUDFLARE_BUILD=1 next build",
+    "preview": "npx --yes wrangler@4.167.0 dev",
+    "deploy": "npx --yes wrangler@4.167.0 deploy",
     "start": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."

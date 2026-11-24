@@ -1,3 +1,6 @@
 import type { NextConfig } from "next";
-const nextConfig: NextConfig = { reactStrictMode: true };
+const nextConfig: NextConfig = {
+  reactStrictMode: true,
+  ...(process.env.CLOUDFLARE_BUILD === "1" ? { output: "export" } : {}),
+};
 export default nextConfig;
