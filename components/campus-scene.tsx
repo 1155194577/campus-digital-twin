@@ -4,8 +4,11 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { TrainFront } from "lucide-react";
+import { isTransitPlace, projectPlace, universityStation } from "@/lib/campus-places";
+import type { CampusPlace, TransitPlace } from "@/lib/campus-places";
 import { partColors } from "@/lib/types";
-import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
+import type { Campus, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 import { campusFramePlanes, projectCampusFramePlane } from "@/lib/campus-frame";
 import { createMapClickGesture } from "@/lib/map-click-gesture";
 
@@ -19,6 +22,7 @@ type SceneState = {
   setActive: (active: boolean) => void;
   view: ViewMode; perspectivePose?: CameraPose; topFrame?: CameraPose; campusBounds: THREE.Box3; modelBounds?: THREE.Box3;
   topSelectionTarget?: THREE.Vector3;
+  updateMarkers?: () => void;
 };
 
 function getCameraPose(s: SceneState): CameraPose {
@@ -46,6 +50,10 @@ function fitTopView(s: SceneState) {
   s.invalidate();
 }
 
+function transitPosition(place: TransitPlace, campus: Campus) {
+  const [x, z] = projectPlace(place, campus.center);
+  return new THREE.Vector3(x, 2, z);
+}
 function disposeObject(object: THREE.Object3D) {
   object.traverse(child => {
     if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.Sprite) {
@@ -110,17 +118,21 @@ function fitModel(s: SceneState, upAxis: UpAxis): ModelInfo | null {
   return { parts: pivot.children.length, triangles: Math.round(triangles), size: [size.x, size.z, size.y].map(v => v < maxSize * 1e-9 ? 0 : v) as ModelInfo["size"] };
 }
 
-export default function CampusScene({ campus, layers, selected, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFiles, upAxis, active, onError, onModelError, onReady, onModelInfo, onHeadingChange }: {
-  campus: Campus; layers: Layers; selected: string | null; onSelect: (f: Feature | null) => void;
+export default function CampusScene({ campus, layers, selected, showTransit, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFiles, upAxis, active, onError, onModelError, onReady, onModelInfo, onHeadingChange }: {
+  campus: Campus; layers: Layers; selected: CampusPlace | null; showTransit: boolean; onSelect: (f: CampusPlace | null) => void;
   onMapPoint?: (point: Point) => void; routeStart?: Point; routeDestination?: Point; routePath?: Point[];
   view: ViewMode; action: ViewerAction | null; modelFiles: File[]; upAxis: UpAxis; active: boolean;
   onError: (error: string) => void; onModelError: () => void; onReady: () => void; onModelInfo: (info: ModelInfo | null) => void; onHeadingChange: (degrees: number) => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
+  const stationMarker = useRef<HTMLButtonElement>(null);
+  const exitMarker = useRef<HTMLButtonElement>(null);
   const state = useRef<SceneState | null>(null);
   const lastAction = useRef<ViewerAction | null>(null);
   const callbacks = useRef({ onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo, onHeadingChange });
   const upAxisRef = useRef(upAxis);
+  const station = showTransit && campus.id === "cuhk" && !modelFiles.length ? universityStation : null;
+  const exit = station && selected?.kind === "exit" ? selected : null;
   useEffect(() => { callbacks.current = { onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo, onHeadingChange }; }, [onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo, onHeadingChange]);
 
   useEffect(() => {
@@ -271,6 +283,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
         }
         renderer.render(scene,camera);
         updateNorthHeading();
+        sceneState.updateMarkers?.();
         if (!ready) { ready = true; callbacks.current.onReady(); }
         dirty = false;
       }
@@ -335,18 +348,41 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     s.invalidate();
   }, [layers, campus, modelFiles]);
   useEffect(() => {
+    const s = state.current;
+    if (!s || !station) return;
+    const markers = [
+      { node: stationMarker.current, point: transitPosition(station, campus) },
+      ...(exit ? [{ node: exitMarker.current, point: transitPosition(exit, campus) }] : []),
+    ];
+    const screen = new THREE.Vector3();
+    s.updateMarkers = () => {
+      for (const { node, point } of markers) {
+        if (!node) continue;
+        screen.copy(point).project(s.camera);
+        const visible = screen.z >= -1 && screen.z <= 1 && Math.abs(screen.x) < .94 && Math.abs(screen.y) < .92;
+        node.hidden = !visible;
+        if (!visible) continue;
+        node.style.left = `${((screen.x + 1) * 50).toFixed(2)}%`;
+        node.style.top = `${((1 - screen.y) * 50).toFixed(2)}%`;
+      }
+    };
+    s.invalidate();
+    return () => { s.updateMarkers = undefined; };
+  }, [campus, station, exit]);
+  useEffect(() => {
     const s = state.current; if(!s)return;
     let selectedMesh: THREE.Mesh | undefined;
     for(const mesh of s.buildings) {
-      const isSelected = mesh.userData.feature.id === selected;
+      const isSelected = mesh.userData.feature.id === selected?.id;
       if (isSelected) selectedMesh = mesh;
       const material=mesh.material as THREE.MeshStandardMaterial;
       material.color.set(isSelected ? "#317cff" : mesh.userData.baseColor);
       material.emissive.set(isSelected ? "#092649" : "#000000");
     }
-    const feature=campus.features.find(f=>f.id===selected);
-    if(feature) s.focus=new THREE.Vector3(feature.points.reduce((a,p)=>a+p[0],0)/feature.points.length,0,feature.points.reduce((a,p)=>a+p[1],0)/feature.points.length);
-    if (s.view === "top") s.topSelectionTarget = selectedMesh ? new THREE.Box3().setFromObject(selectedMesh).getCenter(new THREE.Vector3()) : undefined;
+    if (!selected) s.focus = undefined;
+    else if (isTransitPlace(selected)) s.focus = transitPosition(selected, campus);
+    else s.focus = new THREE.Vector3(selected.points.reduce((a,p)=>a+p[0],0)/selected.points.length,0,selected.points.reduce((a,p)=>a+p[1],0)/selected.points.length);
+    if (s.view === "top") s.topSelectionTarget = selectedMesh ? new THREE.Box3().setFromObject(selectedMesh).getCenter(new THREE.Vector3()) : s.focus?.clone();
     s.invalidate();
   }, [selected,campus]);
   useEffect(() => {
@@ -433,12 +469,17 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
       offset.clampLength(s.controls.minDistance,s.controls.maxDistance); s.camera.position.copy(s.controls.target).add(offset);
     }
     if(action.type==="focus"&&selected) {
-      const mesh=s.buildings.find(m=>m.userData.feature.id===selected);
-      if(mesh) {const center=new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());s.controls.target.copy(center);s.camera.position.copy(center).add(new THREE.Vector3(130,150,160));s.focus=undefined;}
+      const transit=isTransitPlace(selected);
+      const mesh=transit?null:s.buildings.find(m=>m.userData.feature.id===selected.id);
+      const center=transit?transitPosition(selected,campus):mesh?new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()):null;
+      if(center) {
+        const offset=transit?s.camera.position.clone().sub(s.controls.target).setLength(255):new THREE.Vector3(130,150,160);
+        s.controls.target.copy(center);s.camera.position.copy(center).add(offset);s.focus=undefined;
+      }
     }
     s.controls.update();
     s.invalidate();
-  },[action,selected]);
+  },[action,selected,campus]);
   useEffect(()=>{
     const s=state.current; if(!s)return;
     let cancelled=false;
@@ -481,5 +522,9 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     return ()=>{cancelled=true;disposeObject(s.model);s.model.clear();};
   },[modelFiles,campus]);
   useEffect(()=>{ upAxisRef.current=upAxis; const s=state.current; if(s?.model.children.length) callbacks.current.onModelInfo(fitModel(s,upAxis)); },[upAxis]);
-  return <div className="scene-canvas" ref={container}/>;
+  return <>
+    <div className="scene-canvas" ref={container}/>
+    {station&&<button ref={stationMarker} hidden className="map-place-marker" aria-pressed={selected?.id===station.id} onClick={()=>onSelect(station)}><TrainFront size={12}/>{station.name}</button>}
+    {exit&&<button ref={exitMarker} hidden className="map-place-marker exit-marker" aria-pressed="true" onClick={()=>onSelect(exit)}><TrainFront size={12}/>Exit {exit.exit}</button>}
+  </>;
 }
