@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowDown, ArrowRight, ArrowUpRight, Box, FlaskConical, Globe2, Phone } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUpRight, Box, FlaskConical, Globe2, Phone, Share2 } from "lucide-react";
 import LegacyExplorerLink from "@/components/legacy-explorer-link";
 import styles from "./showcase.module.css";
 
@@ -53,7 +53,7 @@ const projects = [
     category: "GIS · 3D printing",
     title: "Hong Kong tactile maps",
     description: "Convert mapped streets, buildings and open spaces into raised-relief models that can be explored by touch.",
-    image: "/data/hkstp-print.webp",
+    image: "/showcase/hkstp-tactile.webp",
     imageLabel: "Tactile STL render",
     href: "https://github.com/1155194577/py-touch-mapper-hk",
     action: "View the tactile map tool",
@@ -120,7 +120,7 @@ export default function Home() {
             <div className={styles.artStage}>
               <Image className={styles.campusArt} src="/showcase/campus-hero.webp" alt="3D render of buildings and open spaces along the Hong Kong Science Park waterfront" width={900} height={442} unoptimized priority />
               <div className={styles.tactileInset}>
-                <Image src="/data/hkstp-print.webp" alt="Raised-relief STL render of Hong Kong Science Park" width={192} height={121} unoptimized />
+                <Image src="/showcase/hkstp-tactile.webp" alt="Raised-relief STL render of Hong Kong Science Park" width={192} height={121} unoptimized />
                 <span>TACTILE STL</span>
               </div>
             </div>
@@ -206,7 +206,12 @@ export default function Home() {
         <div className={`${styles.container} ${styles.footerInner}`}>
           <a href="#top" aria-label="meshPotato home"><Wordmark /></a>
           <a className={styles.textLink} href="tel:+85295165785"><Phone size={16} aria-hidden="true" /> +852 9516 5785</a>
-          <a className={styles.textLink} href="#top">Back to top <ArrowUpRight size={16} aria-hidden="true" /></a>
+          <div className={styles.social}>
+            <button className={styles.socialButton} type="button" aria-describedby="social-note" disabled>
+              <Share2 size={16} aria-hidden="true" /> Social media
+            </button>
+            <span id="social-note">Link coming soon</span>
+          </div>
         </div>
       </footer>
     </div>

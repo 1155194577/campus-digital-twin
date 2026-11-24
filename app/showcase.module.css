@@ -91,6 +91,8 @@
 .goalNote { margin: 19px 0 0; color: #d0dbcb; font-size: 13px; }
 .footer { border-top: 1px solid var(--line); }
 .footerInner { padding-block: 10px; }
+.social { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 10px; color: var(--muted); font-size: 12px; }
+.socialButton:disabled { min-height: 40px; padding: 0 10px; border: 1px solid #aeb8a9; border-radius: 6px; opacity: 1; background: transparent; cursor: default; font-size: 13px; font-weight: 700; }
 
 @media (max-width: 880px) {
   .container { width: min(100% - 48px, 1216px); }
