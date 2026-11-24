@@ -100,8 +100,8 @@ export default function CampusApp() {
   const isCuhk=activeCampus?.id==="cuhk";
   const showTransit=isCuhk&&!planning;
   const selected=(showTransit?transitPlaces.find(f=>f.id===selectedId):null)??activeCampus?.features.find(f=>f.id===selectedId)??null;
-  const start=useMemo(()=>activeCampus?parseEndpoint(activeCampus,startKey):null,[activeCampus,startKey]);
-  const destination=useMemo(()=>activeCampus?parseEndpoint(activeCampus,destinationKey):null,[activeCampus,destinationKey]);
+  const start=useMemo(()=>activeCampus?parseEndpoint(activeCampus,startKey,transitPlaces):null,[activeCampus,startKey]);
+  const destination=useMemo(()=>activeCampus?parseEndpoint(activeCampus,destinationKey,transitPlaces):null,[activeCampus,destinationKey]);
   const graph=useMemo(()=>activeCampus?buildWalkingGraph(activeCampus):null,[activeCampus]);
   const route=useMemo(()=>graph&&start&&destination?findWalkingRoute(graph,activeCampus?.walkDetails,start.point,destination.point):null,[graph,activeCampus,start,destination]);
   const area=activeCampus&&tactileArea(activeCampus.center,planning
@@ -109,7 +109,7 @@ export default function CampusApp() {
     : selected?(isTransitPlace(selected)?[projectPlace(selected,activeCampus.center)]:selected.points):[]);
   const endpointLabel=(endpoint:typeof start)=>{
     if (!endpoint) return null;
-    const feature = activeCampus?.features.find(f => f.id === endpoint.featureId);
+    const feature = (isCuhk?transitPlaces.find(f=>f.id===endpoint.featureId):null)??activeCampus?.features.find(f => f.id === endpoint.featureId);
     return feature?.name || feature?.localName || (feature?.kind === "building" ? "Mapped building" : "Map point");
   };
   const buildings=useMemo(()=>campus?.features.filter(f=>f.kind==="building")??[],[campus]);
@@ -123,12 +123,12 @@ export default function CampusApp() {
     }
     return groups;
   },[named]);
-  const places=useMemo(()=>showTransit?[...transitPlaces,...named]:named,[showTransit,named]);
+  const places=useMemo(()=>isCuhk?[...transitPlaces,...named]:named,[isCuhk,named]);
   const filtered=useMemo(()=>{
-    if(isCuhk)return searchPlaces(query.trim()?places:places.filter(p=>p.kind!=="exit"),campusId,query);
+    if(isCuhk)return searchPlaces(planning||query.trim()?places:places.filter(p=>p.kind!=="exit"),campusId,query);
     const search=normalizeBuildingName(query);
     return named.filter(f=>normalizeBuildingName(`${f.name} ${f.localName??""}`).includes(search));
-  },[isCuhk,places,campusId,named,query]);
+  },[isCuhk,places,campusId,named,planning,query]);
   const ready=useCallback(()=>setSceneReady(true),[]);
   const showError=useCallback((message:string)=>{setError(message);setSceneReady(true);},[]);
   const clearFailedModel=useCallback(()=>setModelFiles([]),[]);
@@ -151,11 +151,9 @@ export default function CampusApp() {
   const select=useCallback((feature:CampusPlace|null)=>{
     detailsTrigger.current=null;
     focusDetailsOnOpen.current=false;
-    if (feature && isTransitPlace(feature)) {
-      if (planning) return;
-      setComparePrint(false);
-    }
-    if (planning && tab === "explore" && !comparePrint && feature) putEndpoint(feature.id);
+    const transit = feature && isTransitPlace(feature);
+    if (transit) setComparePrint(false);
+    if (planning && tab === "explore" && (!comparePrint || transit) && feature) putEndpoint(feature.id);
     else setSelectedId(feature?.id??null);
     setMobileDirectory(false);
   },[comparePrint,planning,putEndpoint,tab]);
@@ -165,8 +163,10 @@ export default function CampusApp() {
     if (planning) clearRoute();
     else {
       setView("top");
-      if (selected && isTransitPlace(selected)) setSelectedId(null);
-      else if (selected) {setStartKey(selected.id);setChoosing("destination");}
+      if (selected) {
+        setStartKey(selected.id);setChoosing("destination");
+        if (isTransitPlace(selected)) setSelectedId(null);
+      }
     }
     setPlanning(!planning);
   };
@@ -219,7 +219,7 @@ export default function CampusApp() {
   const current=campuses.find(c=>c.id===campusId)!;
   const printMode=comparePrint&&tab==="explore";
   const showPrint=printMode&&campus&&!loading;
-  const searchLabel=showTransit?"Find a place or code":isCuhk?"Find a building or code":"Find a building";
+  const searchLabel=isCuhk?"Find a place or code":"Find a building";
   return <div className="app-shell">
     <a className="skip-to-map" href="#map-view">Skip to map controls</a>
     <aside className="rail" aria-label="Main navigation">
@@ -246,9 +246,9 @@ export default function CampusApp() {
             <div className="layer-heading"><h2>Map layers</h2><SlidersHorizontal size={15}/></div>
             <div className="layers">{layerOptions.map(({key,name,icon:Icon,color})=><label className="layer-row" key={key}><span className="layer-symbol" style={{color}}><Icon size={17}/></span><span>{name}</span><input type="checkbox" checked={layers[key]} onChange={e=>setLayers({...layers,[key]:e.target.checked})}/><span className="custom-check">{layers[key]&&<Check size={12}/>}</span></label>)}</div>
             <div className="directory-rule"/>
-            <div className="layer-heading"><h2>{showTransit?"Places directory":"Building directory"}</h2><span className="count">{places.length}</span></div>
+            <div className="layer-heading"><h2>{isCuhk?"Places directory":"Building directory"}</h2><span className="count">{places.length}</span></div>
             <div className="search-field"><Search size={15}/><input ref={search} value={query} onChange={e=>setQuery(e.target.value)} placeholder={`${searchLabel}…`} aria-label={searchLabel}/>{query&&<button onClick={()=>{setQuery("");search.current?.focus();}} aria-label="Clear search"><X size={13}/></button>}</div>
-            <div className="visually-hidden" role="status">{loading?"Loading campus":`${filtered.length} ${showTransit?"places":"buildings"} found`}</div>
+            <div className="visually-hidden" role="status">{loading?"Loading campus":`${filtered.length} ${isCuhk?"places":"buildings"} found`}</div>
             <div className="building-list">{loading?<div className="list-message">Loading campus…</div>:filtered.length?filtered.map(f=>{
               const transit=isTransitPlace(f);
               const footprints=transit?[]:footprintsByName.get(f.name)??[];
@@ -257,7 +257,7 @@ export default function CampusApp() {
               const aliases=isCuhk&&!transit?placeAliases(campusId,f):[];
               const label=transit?(f.kind==="station"?"MTR · East Rail line":"MTR exit"):(f.category==="yes"?"Campus building":f.category.replaceAll("_"," "));
               return <button className={`building-row ${selected?.id===f.id?"selected":""}`} key={f.id} aria-expanded={planning?undefined:selected?.id===f.id} onClick={e=>{if(!transit)setLayers(l=>({...l,building:true}));select(f);if(!planning&&e.detail===0){detailsTrigger.current=e.currentTarget;if(selected?.id===f.id)detailsHeading.current?.focus();else focusDetailsOnOpen.current=true;}}}><span className="building-icon">{transit?<TrainFront size={16}/>:<Building2 size={16}/>}</span><span><strong>{f.name}</strong><small>{aliases.length?aliases.join(" · "):label}{footprintLabel&&<span style={{textTransform:"none"}}> · {footprintLabel}</span>}</small></span><ChevronRight size={13}/></button>;
-            }):<div className="list-message">{showTransit?"No places found. Try a name, code, or station exit.":"No buildings found. Try another name."}</div>}</div>
+            }):<div className="list-message">{isCuhk?"No places found. Try a name, code, or station exit.":"No buildings found. Try another name."}</div>}</div>
             {showTransit&&<a className="campus-map-source" href={cuhkCampusMap} target="_blank" rel="noreferrer">Official CUHK campus map<ArrowUpRight size={12}/></a>}
           </>:<div className="model-panel"><div className="model-art"><FileBox size={40} strokeWidth={1.2}/></div><h2>Your models, a closer look.</h2><p>Open a scanned object or printable model to orbit, zoom and inspect it in 3D.</p><button className="primary-button" onClick={()=>upload.current?.click()}><Upload size={15}/>Open 3D model</button><small>STL or self-contained GLB · up to 50 MB · or drop files on the viewer</small><small>Select several STL parts (e.g. map-ways + map-rest) to view them together.</small>{modelFiles.map(file=><div className="loaded-model" key={file.name+file.lastModified}><FileBox size={17}/><span>{file.name}<small>{(file.size/1024/1024).toFixed(2)} MB · Local file</small></span><button className="icon-button" onClick={()=>removeModel(file)} aria-label={`Remove ${file.name}`}><X size={15}/></button></div>)}{modelFiles.length>0&&<div className="axis-setting"><div className="axis-heading"><span>Up axis</span><div className="view-switch" role="group" aria-label="Model up axis"><button className={upAxis==="z"?"selected":""} aria-pressed={upAxis==="z"} onClick={()=>setUpAxis("z")}>Z up</button><button className={upAxis==="y"?"selected":""} aria-pressed={upAxis==="y"} onClick={()=>setUpAxis("y")}>Y up</button></div></div><p>STL opens Z-up, as slicers expect; GLB opens Y-up, per glTF. Switch if the model lies on its side.</p></div>}<div className="privacy-note"><Check size={14}/>Your model stays on this device.</div></div>}
           <button className="secondary-button mobile-export" onClick={exportData} disabled={!campus||loading}><ArrowDownToLine size={15}/>Export map data</button>
