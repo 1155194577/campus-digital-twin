@@ -232,6 +232,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     const raycaster = new THREE.Raycaster();
     const gesture = createMapClickGesture();
     const move = (event: PointerEvent) => {
+      gesture.move(event);
       if (!event.buttons && event.pointerType !== "touch") return;
       framesToSettle = dampingFrames;
       schedule();
