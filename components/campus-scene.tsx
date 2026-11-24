@@ -16,11 +16,16 @@ type SceneState = {
   model: THREE.Group; span: number; focus?: THREE.Vector3; initial: THREE.Vector3; invalidate: () => void;
   route: THREE.Group;
   setActive: (active: boolean) => void;
-  view: ViewMode; perspectivePose?: CameraPose; campusBounds: THREE.Box3; modelBounds?: THREE.Box3;
+  view: ViewMode; perspectivePose?: CameraPose; topFrame?: CameraPose; campusBounds: THREE.Box3; modelBounds?: THREE.Box3;
 };
 
 function getCameraPose(s: SceneState): CameraPose {
   return { position: s.camera.position.clone(), target: s.controls.target.clone() };
+}
+
+function isAtTopFrame(s: SceneState) {
+  const frame = s.topFrame;
+  return frame && frame.position.distanceToSquared(s.camera.position) < 1e-6 && frame.target.distanceToSquared(s.controls.target) < 1e-6;
 }
 
 function fitTopView(s: SceneState) {
@@ -35,6 +40,7 @@ function fitTopView(s: SceneState) {
   s.camera.position.copy(s.controls.target).add(new THREE.Vector3(0, Math.max(s.controls.minDistance, distance), .01));
   s.focus = undefined;
   s.controls.update();
+  s.topFrame = getCameraPose(s);
   s.invalidate();
 }
 
@@ -266,7 +272,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
       renderer.setSize(width,height);
       const aspectChanged = camera.aspect !== width / height;
       camera.aspect = width / height;
-      if (sceneState.view === "top" && aspectChanged) fitTopView(sceneState);
+      if (sceneState.view === "top" && aspectChanged && isAtTopFrame(sceneState)) fitTopView(sceneState);
       else { camera.updateProjectionMatrix(); invalidate(); }
     };
     const observer = new ResizeObserver(resize); observer.observe(host); resize();
