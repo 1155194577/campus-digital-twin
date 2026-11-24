@@ -106,8 +106,10 @@ dialog.modal-backdrop::backdrop{background:#1c302b66;backdrop-filter:blur(5px)}
   .map-controls{top:auto;bottom:28px;right:12px;transform:none;flex-direction:row}
   .map-controls>span{width:1px;height:18px}
   .feature-card{left:auto;right:12px;bottom:86px;max-height:calc(100% - 103px)}
-  .map-section:has(.route-toolbar) .map-controls{bottom:56px}
-  .map-section:has(.route-toolbar) .feature-card{bottom:114px;max-height:calc(100% - 131px)}
+  .main-workspace:not(.planning-workspace) .map-section:has(>.route-toolbar){display:grid;grid-template-columns:auto minmax(0,1fr)}
+  .main-workspace:not(.planning-workspace) .route-toolbar{align-items:center;padding:0 8px}
+  .main-workspace:not(.planning-workspace) .route-toolbar .secondary-button{min-height:44px;white-space:nowrap}
+  .main-workspace:not(.planning-workspace) .map-section:has(>.route-toolbar)>:is(.viewer,.stats-strip){grid-column:1/-1}
 }
 
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation-duration:.01ms!important;transition:none!important}}
