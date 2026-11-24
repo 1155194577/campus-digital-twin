@@ -168,6 +168,6 @@ export function findWalkingRoute(graph: WalkingGraph, details: Campus["walkDetai
     offsets: [a.offset, b.offset],
     steps: [...ways.values()].filter(way => way.category === "steps").length,
     crossings: tagged.filter(item => item?.crossing).length,
-    tactile: tagged.filter(item => item?.tactilePaving === "yes").length,
+    tactile: tagged.filter(item => item?.tactilePaving !== undefined && item.tactilePaving !== "no").length,
   };
 }

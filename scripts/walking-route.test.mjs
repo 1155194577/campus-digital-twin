@@ -45,6 +45,12 @@ test("prefers mapped walking to off-network shortcuts", () => {
   assert.ok(result.offsets[0] + result.offsets[1] < 44);
 });
 
+test("counts mapped tactile paving variants but not no or missing tags", () => {
+  const path = road("path", [[0, 0], [100, 0], [200, 0], [300, 0], [400, 0]], ["a", "b", "c", "d", "e"], "footway", { tactilePaving: "contrasted" });
+  const details = { b: { tactilePaving: "primitive" }, c: { tactilePaving: "incorrect" }, d: { tactilePaving: "no" } };
+  assert.equal(findWalkingRoute(buildWalkingGraph({ features: [path] }), details, [0, 0], [400, 0]).tactile, 3);
+});
+
 test("round-trips named features and bounded map points for share links", () => {
   const campus = { width: 100, depth: 100, features: [main] };
   assert.deepEqual(parseEndpoint(campus, formatEndpoint({ point: [5.126, -3] })), { point: [5.13, -3] });
