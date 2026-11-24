@@ -17,6 +17,7 @@ type SceneState = {
   route: THREE.Group;
   setActive: (active: boolean) => void;
   view: ViewMode; perspectivePose?: CameraPose; topFrame?: CameraPose; campusBounds: THREE.Box3; modelBounds?: THREE.Box3;
+  topSelectionTarget?: THREE.Vector3;
 };
 
 function getCameraPose(s: SceneState): CameraPose {
@@ -321,15 +322,17 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
   }, [layers, campus, modelFiles]);
   useEffect(() => {
     const s = state.current; if(!s)return;
+    let selectedMesh: THREE.Mesh | undefined;
     for(const mesh of s.buildings) {
+      const isSelected = mesh.userData.feature.id === selected;
+      if (isSelected) selectedMesh = mesh;
       const material=mesh.material as THREE.MeshStandardMaterial;
-      material.color.set(mesh.userData.feature.id===selected ? "#317cff" : mesh.userData.baseColor);
-      material.emissive.set(mesh.userData.feature.id===selected ? "#092649" : "#000000");
+      material.color.set(isSelected ? "#317cff" : mesh.userData.baseColor);
+      material.emissive.set(isSelected ? "#092649" : "#000000");
     }
-    if(selected) {
-      const feature=campus.features.find(f=>f.id===selected);
-      if(feature) s.focus=new THREE.Vector3(feature.points.reduce((a,p)=>a+p[0],0)/feature.points.length,0,feature.points.reduce((a,p)=>a+p[1],0)/feature.points.length);
-    }
+    const feature=campus.features.find(f=>f.id===selected);
+    if(feature) s.focus=new THREE.Vector3(feature.points.reduce((a,p)=>a+p[0],0)/feature.points.length,0,feature.points.reduce((a,p)=>a+p[1],0)/feature.points.length);
+    if (s.view === "top") s.topSelectionTarget = selectedMesh ? new THREE.Box3().setFromObject(selectedMesh).getCenter(new THREE.Vector3()) : undefined;
     s.invalidate();
   }, [selected,campus]);
   useEffect(() => {
@@ -339,13 +342,26 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     s.controls.enableRotate=view!=="top";
     s.controls.mouseButtons.LEFT=view==="top"?THREE.MOUSE.PAN:THREE.MOUSE.ROTATE;
     s.controls.touches.ONE=view==="top"?THREE.TOUCH.PAN:THREE.TOUCH.ROTATE;
-    if (view === "top") { s.perspectivePose = getCameraPose(s); fitTopView(s); return; }
+    if (view === "top") {
+      s.perspectivePose = getCameraPose(s);
+      s.topSelectionTarget = undefined;
+      fitTopView(s);
+      return;
+    }
     s.controls.maxDistance = s.span * 3.2;
     s.camera.far = s.span * 14;
     s.camera.updateProjectionMatrix();
     if (s.perspectivePose) {
-      s.controls.target.copy(s.perspectivePose.target);
-      s.camera.position.copy(s.perspectivePose.position);
+      const { position, target } = s.perspectivePose;
+      if (s.topSelectionTarget) {
+        s.controls.target.copy(s.topSelectionTarget);
+        s.camera.position.copy(position).sub(target).add(s.topSelectionTarget);
+        s.focus = undefined;
+      } else {
+        s.controls.target.copy(target);
+        s.camera.position.copy(position);
+      }
+      s.topSelectionTarget = undefined;
       s.perspectivePose = undefined;
     } else s.camera.position.copy(s.controls.target).add(new THREE.Vector3(.5,.72,.65).normalize().multiplyScalar(distance));
     s.controls.update();
