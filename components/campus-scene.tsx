@@ -33,7 +33,7 @@ function fitModel(s: SceneState, upAxis: UpAxis, view: ViewMode): ModelInfo | nu
   if (!pivot) return null;
   pivot.position.set(0, 0, 0); pivot.scale.setScalar(1);
   pivot.rotation.set(upAxis === "z" ? -Math.PI / 2 : 0, 0, 0);
-  let box = new THREE.Box3().setFromObject(pivot);
+  let box = new THREE.Box3().setFromObject(pivot, true);
   const size = box.getSize(new THREE.Vector3());
   const maxSize = Math.max(size.x, size.y, size.z);
   if (!Number.isFinite(maxSize) || maxSize <= 0) return null;
