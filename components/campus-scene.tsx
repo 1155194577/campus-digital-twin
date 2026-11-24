@@ -266,7 +266,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
     let cancelled=false;
     s.model.clear();
     s.invalidate();
-    if(!modelFiles.length)return;
+    if(!modelFiles.length){callbacks.current.onReady();return;}
     const load=async()=>{
       try {
         const pivot=new THREE.Group();
