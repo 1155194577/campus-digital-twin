@@ -11,7 +11,7 @@ const campuses = [{id:"hkstp",short:"HKSTP",name:"Hong Kong Science Park",tag:"S
 const layerOptions = [{key:"building",name:"Buildings",icon:Building2,color:"#b7c7cd"},{key:"road",name:"Roads & pathways",icon:Map,color:"#c2c9c3"},{key:"park",name:"Green spaces",icon:Leaf,color:"#92b79d"},{key:"water",name:"Water bodies",icon:Waves,color:"#8abcc6"}] as const;
 
 function normalizeBuildingName(name: string) {
-  return name.normalize("NFKC").toLowerCase().replace(/[\p{P}\s]+/gu," ").trim();
+  return name.normalize("NFKC").toLowerCase().replace(/['‘’ʼ.]/g,"").replace(/[\p{P}\s]+/gu," ").trim();
 }
 
 export default function CampusApp() {
