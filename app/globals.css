@@ -10,6 +10,10 @@
 @media(min-width:951px), (min-width:651px) and (min-height:501px){
   .main-workspace:not(.planning-workspace):has(.college-regions){min-height:700px}
 }
+@media(min-width:651px) and (max-width:950px) and (min-height:501px){
+  .main-workspace:not(.planning-workspace):has(.college-regions){height:auto}
+  .main-workspace:not(.planning-workspace):has(.college-regions) .directory{contain:size}
+}
 .route-planner{padding:10px 16px;background:#f2f7f6;border-bottom:1px solid var(--border);font-size:12px}
 .route-planner p{margin:6px 0}
 .route-planner p:last-child{margin-bottom:0}
