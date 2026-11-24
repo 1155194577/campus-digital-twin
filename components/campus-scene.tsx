@@ -114,7 +114,17 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.listenToKeyEvents(renderer.domElement);
     controls.keyRotateSpeed = 12;
-    const updateNorthHeading = () => callbacks.current.onHeadingChange(THREE.MathUtils.radToDeg(controls.getAzimuthalAngle()));
+    const projectedTarget = new THREE.Vector3();
+    const projectedNorth = new THREE.Vector3();
+    const updateNorthHeading = () => {
+      projectedTarget.copy(controls.target).project(camera);
+      projectedNorth.set(controls.target.x, controls.target.y, controls.target.z - 1).project(camera);
+      const dx = (projectedNorth.x - projectedTarget.x) * camera.aspect;
+      const dy = projectedNorth.y - projectedTarget.y;
+      const length = Math.hypot(dx, dy);
+      const heading = Number.isFinite(length) && length > 1e-6 ? Math.atan2(dx, dy) : controls.getAzimuthalAngle();
+      callbacks.current.onHeadingChange(THREE.MathUtils.radToDeg(heading));
+    };
     controls.enableDamping = true; controls.dampingFactor = .08;
     controls.maxPolarAngle = Math.PI / 2.15;
     controls.minDistance = 40; controls.maxDistance = span * 3.2;
