@@ -120,7 +120,11 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
     const model = new THREE.Group(); scene.add(model);
     let frame: number | undefined;
     let ready = false;
-    const invalidate = () => { frame ??= requestAnimationFrame(render); };
+    let dirty = false;
+    let framesToSettle = 0;
+    const dampingFrames = Math.ceil(Math.log(.001) / Math.log(1 - controls.dampingFactor));
+    const schedule = () => { frame ??= requestAnimationFrame(render); };
+    const invalidate = () => { dirty = true; schedule(); };
     const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, span, initial, invalidate };
     function render() {
       if (sceneState.focus) {
@@ -129,10 +133,14 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
         if (controls.target.distanceTo(sceneState.focus)<.1) sceneState.focus=undefined;
       }
       const moved = controls.update();
-      renderer.render(scene,camera);
-      if (!ready) { ready = true; callbacks.current.onReady(); }
+      if (dirty || moved) {
+        renderer.render(scene,camera);
+        if (!ready) { ready = true; callbacks.current.onReady(); }
+        dirty = false;
+      }
       frame = undefined;
-      if (moved || sceneState.focus) invalidate();
+      if (framesToSettle > 0) framesToSettle--;
+      if (moved || sceneState.focus || framesToSettle > 0) schedule();
     }
     state.current = sceneState;
     controls.addEventListener("change", invalidate);
@@ -141,6 +149,11 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
     const raycaster = new THREE.Raycaster();
     let start = [0,0];
     const down = (event: PointerEvent) => { start = [event.clientX,event.clientY]; };
+    const move = (event: PointerEvent) => {
+      if (!event.buttons && event.pointerType !== "touch") return;
+      framesToSettle = dampingFrames;
+      schedule();
+    };
     const up = (event: PointerEvent) => {
       if (Math.hypot(event.clientX-start[0], event.clientY-start[1]) > 5 || model.children.length) return;
       const rect = renderer.domElement.getBoundingClientRect();
@@ -149,6 +162,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
       callbacks.current.onSelect(hit ? hit.object.userData.feature : null);
     };
     renderer.domElement.addEventListener("pointerdown", down);
+    renderer.domElement.addEventListener("pointermove", move);
     renderer.domElement.addEventListener("pointerup", up);
     const lost = (event: Event) => { event.preventDefault(); callbacks.current.onError("The 3D graphics connection was interrupted. Reload the page to reconnect."); };
     renderer.domElement.addEventListener("webglcontextlost",lost);
@@ -157,6 +171,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
       if (frame !== undefined) cancelAnimationFrame(frame);
       observer.disconnect(); controls.removeEventListener("change", invalidate); controls.dispose();
       renderer.domElement.removeEventListener("pointerdown",down); renderer.domElement.removeEventListener("pointerup",up);
+      renderer.domElement.removeEventListener("pointermove",move);
       renderer.domElement.removeEventListener("webglcontextlost",lost);
       disposeObject(scene); renderer.dispose(); host.removeChild(renderer.domElement); state.current=null;
     };
