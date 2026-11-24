@@ -8,7 +8,7 @@ import { TrainFront } from "lucide-react";
 import { isTransitPlace, projectPlace, universityStation } from "@/lib/campus-places";
 import type { CampusPlace, TransitPlace } from "@/lib/campus-places";
 import { partColors } from "@/lib/types";
-import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
+import type { Campus, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 import { campusFramePlanes, projectCampusFramePlane } from "@/lib/campus-frame";
 import { createMapClickGesture } from "@/lib/map-click-gesture";
 
