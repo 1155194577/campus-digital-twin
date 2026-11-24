@@ -1,6 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700;750;800&display=swap');
 
-.route-toolbar{display:flex;padding:8px 16px;background:#fff;border-bottom:1px solid var(--border)}
+.route-toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:8px 16px;background:#fff;border-bottom:1px solid var(--border)}
 .route-planner{padding:10px 16px;background:#f2f7f6;border-bottom:1px solid var(--border);font-size:12px}
 .route-planner p{margin:6px 0}
 .route-planner p:last-child{margin-bottom:0}
@@ -15,6 +15,12 @@
 .planning-workspace .building-list{max-height:clamp(130px,28vh,340px)}
 .planning-workspace .viewer{min-height:clamp(375px,46vh,605px)}
 .viewer.route-shown .map-title{display:none}
+.tactile-handoff{display:grid;justify-items:start;gap:7px;padding:10px 16px;background:#fff;border-bottom:1px solid var(--border);font-size:12px}
+.tactile-handoff p{margin:0}
+.tactile-handoff a{text-decoration:underline}
+.tactile-field{width:100%;min-width:0;display:flex;align-items:flex-end;gap:7px}
+.tactile-field label{display:grid;gap:4px;flex:1;min-width:0;font-weight:600}
+.tactile-field input{height:35px;width:100%;padding:0 8px;border:1px solid var(--border);border-radius:var(--radius);font:inherit;font-weight:400}
 
 :root{--bg:#fcfcfc;--surface:#fff;--text:#191919;--text-muted:#535e57;--border:rgba(0,0,0,.1);--accent:#205bc4;--accent-fg:#fff;--primary-action:#205bc4;--primary-action-fg:#fff;--radius:6px;--font:'DM Sans',Inter,system-ui,sans-serif}
 
