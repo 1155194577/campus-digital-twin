@@ -21,14 +21,19 @@ export function tactileArea(center: Point, points: Point[]): Area | null {
     minX = Math.min(x, minX); minZ = Math.min(z, minZ);
     maxX = Math.max(x, maxX); maxZ = Math.max(z, maxZ);
   }
-  const local: Bounds = [minX - padding, minZ - padding, maxX + padding, maxZ + padding];
+  const width = maxX - minX + 2 * padding, depth = maxZ - minZ + 2 * padding;
+  const scale = Math.max(1000, Math.ceil(Math.max(width, depth) / 17) * 100);
+  const minPrintSideCm = 1.05;
+  const minimumSpan = minPrintSideCm * scale / 100;
+  const padX = padding + Math.max(0, minimumSpan - width) / 2;
+  const padZ = padding + Math.max(0, minimumSpan - depth) / 2;
+  const local: Bounds = [minX - padX, minZ - padZ, maxX + padX, maxZ + padZ];
   const [west, south] = toWgs84(center, [local[0], local[3]]);
   const [east, north] = toWgs84(center, [local[2], local[1]]);
   const bbox: Bounds = [
     Math.floor(west * 1e6) / 1e6, Math.floor(south * 1e6) / 1e6,
     Math.ceil(east * 1e6) / 1e6, Math.ceil(north * 1e6) / 1e6,
   ];
-  const scale = Math.max(1000, Math.ceil(Math.max(maxX - minX, maxZ - minZ, 0) / 17 + padding * 2 / 17) * 100);
   return { local, bbox, scale };
 }
 

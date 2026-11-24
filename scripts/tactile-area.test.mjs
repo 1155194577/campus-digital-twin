@@ -17,6 +17,20 @@ test("valid Touch Mapper bounds contain the route bend and use west south east n
   assert.equal(tactileArea(center, []), null);
 });
 
+test("pads narrow plans so the rounded Touch Mapper print dimensions are valid", () => {
+  for (const end of [[2000, 0], [0, 2000]]) {
+    const area = tactileArea(center, [[0, 0], end]);
+    const [west, south, east, north] = area.bbox;
+    const radians = degrees => degrees * Math.PI / 180;
+    const mercatorY = latitude => Math.asinh(Math.tan(radians(latitude))) / (2 * Math.PI);
+    const meters = 40075016.686 * Math.cos(radians((south + north) / 2));
+    for (const span of [(east - west) * meters / 360, (mercatorY(north) - mercatorY(south)) * meters]) {
+      const cm = Number((span * 100 / area.scale).toFixed(2));
+      assert.ok(cm >= 1 && cm <= 99.9, "print dimension: " + cm);
+    }
+  }
+});
+
 test("exports only bounded geography and includes endpoints and the mapped path", () => {
   const campus = { center, features: [
     feature("crosses", "road", [[-90, 0], [90, 0], [90, 10], [-90, 10]]),
