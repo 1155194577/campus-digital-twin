@@ -28,6 +28,9 @@ function disposeObject(object: THREE.Object3D) {
   });
 }
 
+const partColors = ["#83a9d4", "#e3a65f", "#7fb38a", "#c48bc0"];
+
+
 function endpointMarker(point: Point, label: string, color: string, size: number) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 64;
@@ -70,10 +73,10 @@ function fitModel(s: SceneState, upAxis: UpAxis, view: ViewMode) {
   return true;
 }
 
-export default function CampusScene({ campus, layers, selected, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFile, upAxis, active, onError, onModelError, onReady }: {
+export default function CampusScene({ campus, layers, selected, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFiles, upAxis, active, onError, onModelError, onReady }: {
   campus: Campus; layers: Layers; selected: string | null; onSelect: (f: Feature | null) => void;
   onMapPoint?: (point: Point) => void; routeStart?: Point; routeDestination?: Point; routePath?: Point[];
-  view: ViewMode; action: ViewerAction | null; modelFile: File | null; upAxis: UpAxis; active: boolean;
+  view: ViewMode; action: ViewerAction | null; modelFiles: File[]; upAxis: UpAxis; active: boolean;
   onError: (error: string) => void; onModelError: () => void; onReady: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
@@ -250,9 +253,9 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
   useEffect(() => { state.current?.setActive(active); }, [active, campus]);
   useEffect(() => {
     const s=state.current; if(!s)return;
-    for(const key of Object.keys(layers) as (keyof Layers)[]) s.groups[key].visible=layers[key] && !modelFile;
+    for(const key of Object.keys(layers) as (keyof Layers)[]) s.groups[key].visible=layers[key] && !modelFiles.length;
     s.invalidate();
-  }, [layers, campus, modelFile]);
+  }, [layers, campus, modelFiles]);
   useEffect(() => {
     const s = state.current; if(!s)return;
     for(const mesh of s.buildings) {
@@ -283,7 +286,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     disposeObject(s.route);
     s.route.clear();
     s.invalidate();
-    if (modelFile) return;
+    if (modelFiles.length) return;
     const size = s.span * .032;
     if (routeStart) s.route.add(endpointMarker(routeStart, "A", "#073f75", size));
     if (routeDestination) s.route.add(endpointMarker(routeDestination, "B", "#841d51", size));
@@ -304,10 +307,10 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
       path.renderOrder = 1;
       s.route.add(path);
     }
-  }, [campus, modelFile, routeStart, routeDestination, routePath]);
+  }, [campus, modelFiles, routeStart, routeDestination, routePath]);
   useEffect(() => {
     const s = state.current;
-    if (!s || !routeStart || !routeDestination || modelFile) return;
+    if (!s || !routeStart || !routeDestination || modelFiles.length) return;
     const points = [routeStart, routeDestination, ...(routePath ?? [])];
     const box = new THREE.Box3().setFromPoints(points.map(([x, z]) => new THREE.Vector3(x, 0, z)));
     const center = box.getCenter(new THREE.Vector3());
@@ -319,7 +322,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     s.camera.position.copy(center).add(offset);
     s.controls.update();
     s.invalidate();
-  }, [campus, modelFile, routeStart, routeDestination, routePath, view]);
+  }, [campus, modelFiles, routeStart, routeDestination, routePath, view]);
   useEffect(()=>{
     const s=state.current; if(!s||!action||lastAction.current===action)return;
     lastAction.current=action;
@@ -340,30 +343,38 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     let cancelled=false;
     s.model.clear();
     s.invalidate();
-    if(!modelFile)return;
+    if(!modelFiles.length){callbacks.current.onReady();return;}
     const load=async()=>{
       try {
-        const extension=modelFile.name.split(".").pop()?.toLowerCase();
-        let object: THREE.Object3D;
-        if(extension==="stl") {
-          const {STLLoader}=await import("three/addons/loaders/STLLoader.js");
-          const geometry=new STLLoader().parse(await modelFile.arrayBuffer()); geometry.computeVertexNormals();
-          object=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:"#83a9d4",roughness:.5,metalness:.12,side:THREE.DoubleSide}));
-        } else if(extension==="glb") {
-          const {GLTFLoader}=await import("three/addons/loaders/GLTFLoader.js");
-          // Self-contained binary glTF only; external model resources are blocked.
-          const manager=new THREE.LoadingManager(); manager.setURLModifier(url=>{if(!url.startsWith("blob:")&&!url.startsWith("data:"))throw new Error("Use a self-contained GLB without external resources.");return url;});
-          object=(await new GLTFLoader(manager).parseAsync(await modelFile.arrayBuffer(),"")).scene;
-        } else throw new Error("Choose a binary .glb or .stl file.");
-        if(cancelled){disposeObject(object);return;}
-        const pivot=new THREE.Group(); pivot.add(object); s.model.add(pivot);
+        const pivot=new THREE.Group();
+        // Parts keep their shared origin (e.g. py-touch-mapper's map-ways.stl + map-rest.stl).
+        for(const [index,file] of modelFiles.entries()) {
+          const extension=file.name.split(".").pop()?.toLowerCase();
+          let object: THREE.Object3D;
+          if(extension==="stl") {
+            const {STLLoader}=await import("three/addons/loaders/STLLoader.js");
+            const geometry=new STLLoader().parse(await file.arrayBuffer());
+            if(!geometry.getAttribute("position")?.count){geometry.dispose();continue;}
+            geometry.computeVertexNormals();
+            object=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:partColors[index%partColors.length],roughness:.5,metalness:.12,side:THREE.DoubleSide}));
+          } else if(extension==="glb") {
+            const {GLTFLoader}=await import("three/addons/loaders/GLTFLoader.js");
+            // Self-contained binary glTF only; external model resources are blocked.
+            const manager=new THREE.LoadingManager(); manager.setURLModifier(url=>{if(!url.startsWith("blob:")&&!url.startsWith("data:"))throw new Error("Use a self-contained GLB without external resources.");return url;});
+            object=(await new GLTFLoader(manager).parseAsync(await file.arrayBuffer(),"")).scene;
+          } else throw new Error("Choose a binary .glb or .stl file.");
+          object.name=file.name; pivot.add(object);
+          if(cancelled)break;
+        }
+        if(cancelled){disposeObject(pivot);return;}
+        s.model.add(pivot);
         if(!fitModel(s,upAxisRef.current,viewRef.current)) {disposeObject(s.model);s.model.clear();throw new Error("The model contains no usable geometry.");}
         callbacks.current.onReady();
       }catch{if(!cancelled){callbacks.current.onModelError();callbacks.current.onError("Could not open this model. Choose a valid STL or self-contained GLB file.");}}
     };
     void load();
     return ()=>{cancelled=true;disposeObject(s.model);s.model.clear();};
-  },[modelFile,campus]);
+  },[modelFiles,campus]);
   useEffect(()=>{ upAxisRef.current=upAxis; const s=state.current; if(s) fitModel(s,upAxis,viewRef.current); },[upAxis]);
   return <div className="scene-canvas" ref={container}/>;
 }
