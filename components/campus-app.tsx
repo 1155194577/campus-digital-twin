@@ -65,6 +65,7 @@ export default function CampusApp() {
   const detailsHeading=useRef<HTMLHeadingElement>(null);
   const detailsTrigger=useRef<HTMLButtonElement|null>(null);
   const northNeedle=useRef<SVGPathElement>(null);
+  const focusDetailsOnOpen=useRef(false);
   useEffect(()=>{
     const params = new URLSearchParams(window.location.search);
     const requestedCampus = campuses.find(item => item.id === params.get("campus"));
@@ -172,7 +173,8 @@ export default function CampusApp() {
     detailsTrigger.current=null;
   };
   useEffect(()=>{
-    if (selected && detailsTrigger.current) detailsHeading.current?.focus();
+    if (selected && focusDetailsOnOpen.current) detailsHeading.current?.focus();
+    focusDetailsOnOpen.current=false;
   },[selected]);
   const command=(type:ViewerAction["type"])=>{
     if(type==="focus"&&selected&&!isTransitPlace(selected))setView("perspective");
@@ -241,7 +243,7 @@ export default function CampusApp() {
               const footprintLabel=!transit&&footprints.length>1&&(f.area!=null&&sameArea.length===1?`${f.area.toLocaleString()} m²`:`Footprint ${footprints.indexOf(f)+1}`);
               const aliases=transit?[]:placeAliases(campusId,f);
               const label=transit?(f.kind==="station"?"MTR · East Rail line":"MTR exit"):(f.category==="yes"?"Campus building":f.category.replaceAll("_"," "));
-              return <button className={`building-row ${selected?.id===f.id?"selected":""}`} key={f.id} aria-expanded={planning?undefined:selected?.id===f.id} onClick={e=>{if(!transit)setLayers(l=>({...l,building:true}));select(f);if(!planning&&e.detail===0){detailsTrigger.current=e.currentTarget;if(selected?.id===f.id)detailsHeading.current?.focus();}}}><span className="building-icon">{transit?<TrainFront size={16}/>:<Building2 size={16}/>}</span><span><strong>{f.name}</strong><small>{aliases.length?aliases.join(" · "):label}{footprintLabel&&<span style={{textTransform:"none"}}> · {footprintLabel}</span>}</small></span><ChevronRight size={13}/></button>;
+              return <button className={`building-row ${selected?.id===f.id?"selected":""}`} key={f.id} aria-expanded={planning?undefined:selected?.id===f.id} onClick={e=>{if(!transit)setLayers(l=>({...l,building:true}));select(f);if(!planning&&e.detail===0){detailsTrigger.current=e.currentTarget;if(selected?.id===f.id)detailsHeading.current?.focus();else focusDetailsOnOpen.current=true;}}}><span className="building-icon">{transit?<TrainFront size={16}/>:<Building2 size={16}/>}</span><span><strong>{f.name}</strong><small>{aliases.length?aliases.join(" · "):label}{footprintLabel&&<span style={{textTransform:"none"}}> · {footprintLabel}</span>}</small></span><ChevronRight size={13}/></button>;
             }):<div className="list-message">{isCuhk?"No places found. Try a name, code, or station exit.":"No buildings found. Try another name."}</div>}</div>
             {isCuhk&&<a className="campus-map-source" href={cuhkCampusMap} target="_blank" rel="noreferrer">Official CUHK campus map<ArrowUpRight size={12}/></a>}
           </>:<div className="model-panel"><div className="model-art"><FileBox size={40} strokeWidth={1.2}/></div><h2>Your models, a closer look.</h2><p>Open a scanned object or printable model to orbit, zoom and inspect it in 3D.</p><button className="primary-button" onClick={()=>upload.current?.click()}><Upload size={15}/>Open 3D model</button><small>STL or self-contained GLB · up to 50 MB · or drop files on the viewer</small><small>Select several STL parts (e.g. map-ways + map-rest) to view them together.</small>{modelFiles.map(file=><div className="loaded-model" key={file.name+file.lastModified}><FileBox size={17}/><span>{file.name}<small>{(file.size/1024/1024).toFixed(2)} MB · Local file</small></span><button className="icon-button" onClick={()=>removeModel(file)} aria-label={`Remove ${file.name}`}><X size={15}/></button></div>)}{modelFiles.length>0&&<div className="axis-setting"><div className="axis-heading"><span>Up axis</span><div className="view-switch" role="group" aria-label="Model up axis"><button className={upAxis==="z"?"selected":""} aria-pressed={upAxis==="z"} onClick={()=>setUpAxis("z")}>Z up</button><button className={upAxis==="y"?"selected":""} aria-pressed={upAxis==="y"} onClick={()=>setUpAxis("y")}>Y up</button></div></div><p>STL opens Z-up, as slicers expect; GLB opens Y-up, per glTF. Switch if the model lies on its side.</p></div>}<div className="privacy-note"><Check size={14}/>Your model stays on this device.</div></div>}
@@ -281,7 +283,7 @@ export default function CampusApp() {
               {selected.localName&&selected.localName!==selected.name&&<p className="local-name">{selected.localName}</p>}
               {isTransitPlace(selected)?<>
                 <div className="station-exits" aria-label="University Station exits">
-                  {universityExits.map(exit=><button key={exit.id} className="secondary-button" aria-pressed={exit.id===selected.id} onClick={()=>select(exit)}>Exit {exit.exit}</button>)}
+                  {universityExits.map(exit=><button key={exit.id} className="secondary-button" aria-pressed={exit.id===selected.id} onClick={()=>setSelectedId(exit.id)}>Exit {exit.exit}</button>)}
                 </div>
                 <button className="primary-button" onClick={()=>command("focus")}><Crosshair size={15}/>Focus {selected.kind}</button>
                 <a className="osm-link" href={universityStationMap} target="_blank" rel="noreferrer">MTR station map<ArrowUpRight size={12}/></a>
