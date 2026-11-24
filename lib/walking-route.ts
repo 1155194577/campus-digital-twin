@@ -100,6 +100,31 @@ function candidatesByNode(candidates: Snap[]) {
 export function findWalkingRoute(graph: WalkingGraph, details: Campus["walkDetails"], start: Point, destination: Point): WalkingRoute | null {
   const starts = snapCandidates(graph, start);
   const destinations = snapCandidates(graph, destination);
+  const route = routeBetweenSnaps(graph, details, starts, destinations);
+  if (!route || route.length > 0 || distance(start, destination) === 0) return route;
+
+  const closest = (candidates: Snap[]) => candidates.reduce((a, b) => a.offset <= b.offset ? a : b);
+  const nearestStart = closest(starts), nearestEnd = closest(destinations);
+  if (distance(nearestStart.point, nearestEnd.point) > 0) {
+    const nearestRoute = routeBetweenSnaps(graph, details, [nearestStart], [nearestEnd]);
+    if (nearestRoute?.length) return nearestRoute;
+  }
+
+  let best: WalkingRoute | null = null;
+  let bestCost = Infinity;
+  const nearestEndCost = endpointGapWeight * nearestEnd.offset;
+  for (const snap of starts.sort((a, b) => a.offset - b.offset)) {
+    if (endpointGapWeight * snap.offset + nearestEndCost >= bestCost) break;
+    const distinctEnds = destinations.filter(end => distance(snap.point, end.point) > 0);
+    const candidate = routeBetweenSnaps(graph, details, [snap], distinctEnds);
+    if (!candidate?.length) continue;
+    const cost = candidate.length + endpointGapWeight * (candidate.offsets[0] + candidate.offsets[1]);
+    if (cost < bestCost) { best = candidate; bestCost = cost; }
+  }
+  return best;
+}
+
+function routeBetweenSnaps(graph: WalkingGraph, details: Campus["walkDetails"], starts: Snap[], destinations: Snap[]): WalkingRoute | null {
   if (!starts.length || !destinations.length) return null;
   const startNodes = candidatesByNode(starts);
   const endNodes = candidatesByNode(destinations);

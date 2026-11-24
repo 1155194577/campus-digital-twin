@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import { buildWalkingGraph, findWalkingRoute, formatEndpoint, parseEndpoint } from "../lib/walking-route.ts";
+import { buildWalkingGraph, featureEndpoint, findWalkingRoute, formatEndpoint, parseEndpoint } from "../lib/walking-route.ts";
 
 const road = (id, points, walkNodes, category = "footway", extra = {}) =>
   ({ id, points, walkNodes, category, kind: "road", ...extra });
@@ -43,6 +44,25 @@ test("prefers mapped walking to off-network shortcuts", () => {
   const result = findWalkingRoute(graph, {}, [0, 0], [44, 0]);
   assert.ok(result.length > 15 && result.length < 30);
   assert.ok(result.offsets[0] + result.offsets[1] < 44);
+});
+
+test("walks between distinct snaps for Tin Ka Ping Building and University Library", () => {
+  const campus = JSON.parse(readFileSync(new URL("../public/data/cuhk.json", import.meta.url), "utf8"));
+  const start = featureEndpoint(campus.features.find(f => f.id === "way/134410444")).point;
+  const destination = featureEndpoint(campus.features.find(f => f.id === "way/134410449")).point;
+  const result = findWalkingRoute(buildWalkingGraph(campus), campus.walkDetails, start, destination);
+  assert.equal(Math.round(result.length), 160);
+  assert.notDeepEqual(result.points[0], result.points.at(-1));
+});
+
+test("finds distinct alternatives when the closest snaps coincide", () => {
+  const short = road("short", [[0, 0], [0, -5]], ["s", "t"]);
+  const result = findWalkingRoute(buildWalkingGraph({ features: [short] }), {}, [-10, 0], [10, 0]);
+  assert.equal(result, null);
+
+  const bend = road("bend", [[0, 0], [-15, -20], [15, -20]], ["s", "u", "v"]);
+  const alternative = findWalkingRoute(buildWalkingGraph({ features: [short, bend] }), {}, [-10, 0], [10, 0]);
+  assert.ok(alternative.length > 0);
 });
 
 test("counts mapped tactile paving variants but not no or missing tags", () => {
