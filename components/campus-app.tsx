@@ -59,6 +59,7 @@ export default function CampusApp() {
   const [mobileDirectory,setMobileDirectory]=useState(false);
   const upload=useRef<HTMLInputElement>(null);
   const viewer=useRef<HTMLDivElement>(null);
+  const mapSurface=useRef<HTMLDivElement>(null);
   const directoryToggle=useRef<HTMLButtonElement>(null);
   const aboutDialog=useRef<HTMLDialogElement>(null);
   const search=useRef<HTMLInputElement>(null);
@@ -148,7 +149,11 @@ export default function CampusApp() {
   },[activeCampus,putEndpoint]);
   const select=useCallback((feature:CampusPlace|null)=>{
     detailsTrigger.current=null;
-    if (planning && feature && isTransitPlace(feature)) return;
+    focusDetailsOnOpen.current=false;
+    if (feature && isTransitPlace(feature)) {
+      if (planning) return;
+      setComparePrint(false);
+    }
     if (planning && tab === "explore" && !comparePrint && feature) putEndpoint(feature.id);
     else setSelectedId(feature?.id??null);
     setMobileDirectory(false);
@@ -177,7 +182,13 @@ export default function CampusApp() {
     focusDetailsOnOpen.current=false;
   },[selected]);
   const command=(type:ViewerAction["type"])=>{
-    if(type==="focus"&&selected&&!isTransitPlace(selected))setView("perspective");
+    if(type==="focus"&&selected){
+      if(isTransitPlace(selected)&&mapSurface.current){
+        const {top,height}=mapSurface.current.getBoundingClientRect();
+        const center=top+height/2;
+        if(center<30||center>window.innerHeight)mapSurface.current.scrollIntoView({block:"center"});
+      }else if(!isTransitPlace(selected))setView("perspective");
+    }
     setAction({type,at:Date.now()});
   };
   const chooseModels=(list?:FileList|null)=>{
@@ -266,7 +277,7 @@ export default function CampusApp() {
           <div className={`viewer ${dragging?"dragging":""} ${planning&&start&&destination&&tab==="explore"?"route-shown":""}`} ref={viewer} onDragOver={e=>{if(!e.dataTransfer.types.includes("Files"))return;e.preventDefault();setDragging(true);}} onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node|null))setDragging(false);}} onDrop={e=>{e.preventDefault();setDragging(false);chooseModels(e.dataTransfer.files);}}>
             {showPrint&&<PrintComparison campus={campus} layers={layers} selected={selected&&!isTransitPlace(selected)?selected:null}/>}
             <div className="campus-map-view" hidden={Boolean(showPrint)}>
-              <div className="map-surface">
+              <div className="map-surface" ref={mapSurface}>
                 <CampusScene campus={loading?null:activeCampus} layers={layers} selected={planning?null:selected} showTransit={!planning&&tab==="explore"} onSelect={select} onMapPoint={!showPrint&&planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFiles={modelFiles} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready} onModelInfo={setModelInfo} onHeadingChange={showNorthHeading}/>
                 {(loading||!sceneReady)&&!error&&<div className="loading-overlay" role="status"><LoaderCircle className="spin" size={28}/><strong>{modelFiles.length?"Opening your model":"Bringing campus into focus"}</strong><span>Preparing your 3D view…</span></div>}
                 {error&&<div className="error-banner" role="alert"><Info size={17}/><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError("")}><X size={16}/></button></div>}
