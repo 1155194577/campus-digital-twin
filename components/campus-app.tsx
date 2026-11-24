@@ -50,7 +50,7 @@ export default function CampusApp() {
   },[named]);
   const filtered=useMemo(()=>{
     const search=normalizeBuildingName(query);
-    return named.filter(f=>normalizeBuildingName(f.name).includes(search)||normalizeBuildingName(f.localName??"").includes(search));
+    return named.filter(f=>normalizeBuildingName(`${f.name} ${f.localName??""}`).includes(search));
   },[named,query]);
   const ready=useCallback(()=>setSceneReady(true),[]);
   const showError=useCallback((message:string)=>{setError(message);setSceneReady(true);},[]);
