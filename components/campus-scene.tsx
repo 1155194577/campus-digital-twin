@@ -143,6 +143,9 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
   useEffect(() => {
     const s=state.current; if(!s)return;
     const distance=s.camera.position.distanceTo(s.controls.target);
+    s.controls.enableRotate=view!=="top";
+    s.controls.mouseButtons.LEFT=view==="top"?THREE.MOUSE.PAN:THREE.MOUSE.ROTATE;
+    s.controls.touches.ONE=view==="top"?THREE.TOUCH.PAN:THREE.TOUCH.ROTATE;
     s.camera.position.copy(s.controls.target).add(view==="top" ? new THREE.Vector3(0,distance,.01) : new THREE.Vector3(.5,.72,.65).normalize().multiplyScalar(distance));
     s.controls.update();
   },[view,campus]);

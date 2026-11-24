@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, ArrowUpRight, Box, Building2, Check, ChevronDown, ChevronRight, Compass, Crosshair, Expand, FileBox, Info, Layers3, Leaf, LoaderCircle, Map, MapPin, Minus, MousePointer2, Move3D, Plus, RotateCcw, Search, SlidersHorizontal, Upload, Waves, X } from "lucide-react";
 import type { Campus, Feature, Layers, ViewMode, ViewerAction } from "@/lib/types";
@@ -38,7 +39,10 @@ export default function CampusApp() {
   const ready=useCallback(()=>setSceneReady(true),[]);
   const showError=useCallback((message:string)=>{setError(message);setSceneReady(true);},[]);
   const select=useCallback((feature:Feature|null)=>{setSelected(feature);setMobileDirectory(false);},[]);
-  const command=(type:ViewerAction["type"])=>setAction({type,at:Date.now()});
+  const command=(type:ViewerAction["type"])=>{
+    if(type==="focus")setView("perspective");
+    setAction({type,at:Date.now()});
+  };
   const chooseModel=(file?:File)=>{
     if(!file)return;
     if(!/\.(stl|glb)$/i.test(file.name)){setError("Please choose an STL or self-contained GLB model.");return;}
@@ -53,7 +57,7 @@ export default function CampusApp() {
   const current=campuses.find(c=>c.id===campusId)!;
   return <div className="app-shell">
     <aside className="rail" aria-label="Main navigation">
-      <a className="brand-mark" href="/" aria-label="Campus Atlas home"><Layers3 size={25}/></a>
+      <Link className="brand-mark" href="/" aria-label="Campus Atlas home"><Layers3 size={25}/></Link>
       <div className="rail-divider"/>
       <button className={tab==="explore"?"rail-button active":"rail-button"} title="Campus explorer" aria-label="Campus explorer" onClick={()=>{setTab("explore");setModelFile(null);}}><Map size={21}/></button>
       <button className={tab==="models"?"rail-button active":"rail-button"} title="3D model viewer" aria-label="3D model viewer" onClick={()=>setTab("models")}><Box size={21}/></button>
