@@ -2,11 +2,19 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { preload } from "react-dom";
 import { ArrowDownToLine, ArrowUpRight, Box, Building2, Check, ChevronDown, ChevronRight, Compass, Crosshair, Expand, FileBox, Info, Layers3, Leaf, LoaderCircle, Map, MapPin, Minus, MousePointer2, Move3D, Plus, RotateCcw, Search, SlidersHorizontal, Upload, Waves, X } from "lucide-react";
 import type { Campus, Feature, Layers, ViewMode, ViewerAction } from "@/lib/types";
 
-const CampusScene = dynamic(() => import("./campus-scene"), { ssr: false });
+type SceneProps = ComponentProps<typeof import("./campus-scene").default>;
+const CampusScene = dynamic(async () => {
+  const { default: Scene } = await import("./campus-scene");
+  return function SceneWhenReady({ campus, ...props }: Omit<SceneProps, "campus"> & { campus: Campus | null }) {
+    return campus ? <Scene campus={campus} {...props}/> : null;
+  };
+}, { ssr: false });
+const initialCampusId = "hkstp";
 const campuses = [{id:"hkstp",short:"HKSTP",name:"Hong Kong Science Park",tag:"Science & innovation"},{id:"cuhk",short:"CUHK",name:"The Chinese University of Hong Kong",tag:"Education & research"}];
 const layerOptions = [{key:"building",name:"Buildings",icon:Building2,color:"#b7c7cd"},{key:"road",name:"Roads & pathways",icon:Map,color:"#c2c9c3"},{key:"park",name:"Green spaces",icon:Leaf,color:"#92b79d"},{key:"water",name:"Water bodies",icon:Waves,color:"#8abcc6"}] as const;
 
@@ -15,7 +23,8 @@ function normalizeBuildingName(name: string) {
 }
 
 export default function CampusApp() {
-  const [campusId,setCampusId]=useState("hkstp");
+  preload(`/data/${initialCampusId}.json`, { as: "fetch", crossOrigin: "anonymous" });
+  const [campusId,setCampusId]=useState(initialCampusId);
   const [campus,setCampus]=useState<Campus|null>(null);
   const [loading,setLoading]=useState(true);
   const [sceneReady,setSceneReady]=useState(false);
@@ -111,7 +120,7 @@ export default function CampusApp() {
         <section className="map-section">
           <div className="map-toolbar"><div className="map-breadcrumb"><span className="toolbar-icon"><MapPin size={16}/></span><strong>{modelFile?modelFile.name:current.short}</strong><ChevronRight size={13}/><span>{modelFile?"Model viewer":"Campus overview"}</span></div><div className="view-switch" aria-label="Map view"><button className={view==="perspective"?"selected":""} onClick={()=>setView("perspective")}><Box size={14}/>3D</button><button className={view==="top"?"selected":""} onClick={()=>setView("top")}><Map size={14}/>Top</button></div><button className="icon-button mobile-directory-toggle" aria-label="Open campus directory" onClick={()=>setMobileDirectory(true)}><Layers3 size={18}/></button></div>
           <div className="viewer" ref={viewer}>
-            {campus&&!loading&&<CampusScene campus={campus} layers={layers} selected={selected?.id??null} onSelect={select} view={view} action={action} modelFile={modelFile} onError={showError} onModelError={clearFailedModel} onReady={ready}/>}
+            <CampusScene campus={loading ? null : campus} layers={layers} selected={selected?.id??null} onSelect={select} view={view} action={action} modelFile={modelFile} onError={showError} onModelError={clearFailedModel} onReady={ready}/>
             {(loading||!sceneReady)&&!error&&<div className="loading-overlay"><LoaderCircle className="spin" size={28}/><strong>Bringing campus into focus</strong><span>Preparing your 3D view…</span></div>}
             {error&&<div className="error-banner" role="alert"><Info size={17}/><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError("")}><X size={16}/></button></div>}
             <div className="map-title"><span className="map-kicker">{modelFile?"LOCAL MODEL":"CAMPUS DIGITAL TWIN"}</span><h2>{modelFile?modelFile.name:current.name}</h2><p>{modelFile?"Your geometry. A different perspective.":campus?.subtitle}</p></div>
