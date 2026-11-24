@@ -278,7 +278,6 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     viewRef.current=view;
     const s=state.current; if(!s)return;
     const distance=s.camera.position.distanceTo(s.controls.target);
-    s.renderer.domElement.setAttribute("aria-label", `Interactive 3D campus map. Drag to ${view==="top"?"pan":"orbit"}, scroll to zoom, click buildings to inspect. Use the adjacent buttons for camera controls.`);
     s.controls.enableRotate=view!=="top";
     s.controls.mouseButtons.LEFT=view==="top"?THREE.MOUSE.PAN:THREE.MOUSE.ROTATE;
     s.controls.touches.ONE=view==="top"?THREE.TOUCH.PAN:THREE.TOUCH.ROTATE;
