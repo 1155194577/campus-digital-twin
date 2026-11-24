@@ -31,6 +31,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
 }) {
   const container = useRef<HTMLDivElement>(null);
   const state = useRef<SceneState | null>(null);
+  const lastAction = useRef<ViewerAction | null>(null);
   const callbacks = useRef({ onSelect, onError, onReady });
   useEffect(() => { callbacks.current = { onSelect, onError, onReady }; }, [onSelect, onError, onReady]);
 
@@ -150,7 +151,8 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
     s.controls.update();
   },[view,campus]);
   useEffect(()=>{
-    const s=state.current; if(!s||!action)return;
+    const s=state.current; if(!s||!action||lastAction.current===action)return;
+    lastAction.current=action;
     if(action.type==="reset") {s.controls.target.set(0,0,0); s.camera.position.copy(s.initial); s.focus=undefined;}
     if(action.type==="zoomIn"||action.type==="zoomOut") {
       const offset=s.camera.position.clone().sub(s.controls.target).multiplyScalar(action.type==="zoomIn"?.75:1.3);
