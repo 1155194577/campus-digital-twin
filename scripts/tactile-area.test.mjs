@@ -70,3 +70,22 @@ test("clips coastline ways to the area and omits those outside it", () => {
     }
   }
 });
+
+test("exports polygon exteriors counterclockwise without changing source rings", () => {
+  const clockwise = [[0, 0], [10, 0], [10, 10], [0, 0]];
+  const counterclockwise = [...clockwise].reverse();
+  const campus = { center, features: [
+    feature("clockwise", "building", clockwise),
+    feature("counterclockwise", "building", counterclockwise),
+  ] };
+  const data = tactileGeoJson(campus, tactileArea(center, route.points), [null, null], null);
+  assert.equal(data.features.length, 2);
+  for (const { geometry } of data.features) {
+    assert.equal(geometry.type, "Polygon");
+    const [ring] = geometry.coordinates;
+    assert.deepEqual(ring[0], ring.at(-1));
+    const [a, b, c] = ring;
+    assert.ok((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) > 0);
+  }
+  assert.deepEqual(clockwise, [[0, 0], [10, 0], [10, 10], [0, 0]]);
+});

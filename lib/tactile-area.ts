@@ -86,7 +86,13 @@ function boundedFeature(feature: Feature, center: Point, bounds: Bounds): GeoFea
     geometry = clipped;
   } else {
     if (!feature.points.every(inside)) return null;
-    geometry = { type: "Polygon", coordinates: [coords(feature.points)] };
+    const ring = coords(feature.points);
+    const [originX, originY] = ring[0];
+    const signedArea = ring.reduce((area, [x, y], i) => {
+      const [nextX, nextY] = ring[(i + 1) % ring.length];
+      return area + (x - originX) * (nextY - originY) - (nextX - originX) * (y - originY);
+    }, 0);
+    geometry = { type: "Polygon", coordinates: [signedArea < 0 ? ring.reverse() : ring] };
   }
   return {
     type: "Feature", id: feature.id, geometry,
