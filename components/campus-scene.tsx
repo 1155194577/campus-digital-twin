@@ -10,6 +10,7 @@ type SceneState = {
   scene: THREE.Scene; camera: THREE.PerspectiveCamera; renderer: THREE.WebGLRenderer;
   controls: OrbitControls; groups: Record<keyof Layers, THREE.Group>; buildings: THREE.Mesh[];
   model: THREE.Group; span: number; focus?: THREE.Vector3; initial: THREE.Vector3; invalidate: () => void;
+  setActive: (active: boolean) => void;
 };
 
 function disposeObject(object: THREE.Object3D) {
@@ -44,9 +45,9 @@ function fitModel(s: SceneState, upAxis: UpAxis, view: ViewMode) {
   return true;
 }
 
-export default function CampusScene({ campus, layers, selected, onSelect, view, action, modelFile, upAxis, onError, onModelError, onReady }: {
+export default function CampusScene({ campus, layers, selected, onSelect, view, action, modelFile, upAxis, active, onError, onModelError, onReady }: {
   campus: Campus; layers: Layers; selected: string | null; onSelect: (f: Feature | null) => void;
-  view: ViewMode; action: ViewerAction | null; modelFile: File | null; upAxis: UpAxis;
+  view: ViewMode; action: ViewerAction | null; modelFile: File | null; upAxis: UpAxis; active: boolean;
   onError: (error: string) => void; onModelError: () => void; onReady: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
@@ -146,13 +147,22 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
     }
     const model = new THREE.Group(); scene.add(model);
     let frame: number | undefined;
+    let visible = true;
     let ready = false;
     let dirty = false;
     let framesToSettle = 0;
     const dampingFrames = Math.ceil(Math.log(.001) / Math.log(1 - controls.dampingFactor));
-    const schedule = () => { frame ??= requestAnimationFrame(render); };
+    const schedule = () => { if (visible) frame ??= requestAnimationFrame(render); };
     const invalidate = () => { dirty = true; schedule(); };
-    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, span, initial, invalidate };
+    const setActive = (active: boolean) => {
+      visible = active;
+      if (visible) invalidate();
+      else if (frame !== undefined) {
+        cancelAnimationFrame(frame);
+        frame = undefined;
+      }
+    };
+    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, span, initial, invalidate, setActive };
     function render() {
       if (sceneState.focus) {
         const delta = sceneState.focus.clone().sub(controls.target).multiplyScalar(.12);
@@ -204,6 +214,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
     };
   }, [campus]);
 
+  useEffect(() => { state.current?.setActive(active); }, [active, campus]);
   useEffect(() => {
     const s=state.current; if(!s)return;
     for(const key of Object.keys(layers) as (keyof Layers)[]) s.groups[key].visible=layers[key] && !modelFile;

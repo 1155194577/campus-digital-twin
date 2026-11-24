@@ -24,6 +24,7 @@ dialog.modal-backdrop::backdrop{background:#1c302b66;backdrop-filter:blur(5px)}
 .mobile-export{display:none}
 @media(max-width:650px){.mobile-export{display:flex;margin:12px 17px;width:calc(100% - 34px);flex-shrink:0}}
 .viewer:has(.print-comparison){container-type:inline-size}
+.campus-map-view{position:absolute;inset:0}
 .print-comparison{position:absolute;inset:0;overflow:auto;display:grid;grid-template-rows:auto minmax(160px,1fr) auto;gap:16px;padding:20px;background:#f6f8f5}
 .print-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .print-header h2{font-size:17px;margin:0 0 4px}

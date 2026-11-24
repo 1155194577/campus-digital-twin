@@ -100,6 +100,7 @@ export default function CampusApp() {
   };
   const current=campuses.find(c=>c.id===campusId)!;
   const printMode=comparePrint&&tab==="explore";
+  const showPrint=printMode&&campus&&!loading;
   return <div className="app-shell">
     <a className="skip-to-map" href="#map-view">Skip to map controls</a>
     <aside className="rail" aria-label="Main navigation">
@@ -139,7 +140,7 @@ export default function CampusApp() {
           <button className="secondary-button mobile-export" onClick={exportData} disabled={!campus||loading}><ArrowDownToLine size={15}/>Export map data</button>
           <div className="directory-footer"><span className="small-dot"/>Built on open geographic data<button onClick={showInfo} aria-label="Read map attribution"><ArrowUpRight size={13}/></button></div>
         </section>
-        <section className="map-section" id="map-view" aria-labelledby={printMode&&campus&&!loading?"print-heading":"map-title"} tabIndex={-1}>
+        <section className="map-section" id="map-view" aria-labelledby={showPrint?"print-heading":"map-title"} tabIndex={-1}>
           <div className="map-toolbar">
             <div className="map-breadcrumb"><span className="toolbar-icon"><MapPin size={16}/></span><strong>{modelFile?modelFile.name:current.short}</strong><ChevronRight size={13}/><span>{modelFile?"Model viewer":printMode?"Print comparison":"Campus overview"}</span></div>
             <div className="view-switch" role="group" aria-label="Map view">
@@ -150,8 +151,9 @@ export default function CampusApp() {
             <button ref={directoryToggle} className="icon-button mobile-directory-toggle" aria-label="Open campus directory" onClick={()=>setMobileDirectory(true)}><Layers3 size={18}/></button>
           </div>
           <div className="viewer" ref={viewer}>
-            {printMode&&campus&&!loading?<PrintComparison campus={campus} layers={layers} selected={selected}/>:<>
-            <CampusScene campus={loading ? null : campus} layers={layers} selected={selected?.id??null} onSelect={select} view={view} action={action} modelFile={modelFile} upAxis={upAxis} onError={showError} onModelError={clearFailedModel} onReady={ready}/>
+            {showPrint&&<PrintComparison campus={campus} layers={layers} selected={selected}/>}
+            <div className="campus-map-view" hidden={Boolean(showPrint)}>
+            <CampusScene campus={loading ? null : campus} layers={layers} selected={selected?.id??null} onSelect={select} view={view} action={action} modelFile={modelFile} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready}/>
             {(loading||!sceneReady)&&!error&&<div className="loading-overlay" role="status"><LoaderCircle className="spin" size={28}/><strong>Bringing campus into focus</strong><span>Preparing your 3D view…</span></div>}
             {error&&<div className="error-banner" role="alert"><Info size={17}/><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError("")}><X size={16}/></button></div>}
             <div className="map-title"><span className="map-kicker">{modelFile?"LOCAL MODEL":"CAMPUS DIGITAL TWIN"}</span><h2 id="map-title">{modelFile?modelFile.name:current.name}</h2><p>{modelFile?"Your geometry. A different perspective.":campus?.subtitle}</p></div>
@@ -160,7 +162,7 @@ export default function CampusApp() {
             <p className="scene-keyboard-help" id="scene-keyboard-help">Arrow keys pan. {view==="perspective"&&"Shift + arrow keys orbit. "}Tab to the zoom and reset controls.</p>
             <div className="map-bottom"><div className="map-legend"><span><i style={{background:"#b7c7cd"}}/>Built environment</span><span><i style={{background:"#92b79d"}}/>Landscape</span><span><i style={{background:"#8abcc6"}}/>Water</span></div><div className="interaction-hint"><MousePointer2 size={13}/>Drag to {view==="top"?"pan":"orbit"}<span>·</span>Scroll to zoom<span>·</span>Click to inspect</div></div>
             <a className="attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
-            </>}
+            </div>
           </div>
           <div className="stats-strip"><div className="stat"><span className="stat-icon"><Building2 size={20}/></span><div><span>Mapped buildings</span><strong>{loading?"—":buildings.length}<small>across this area</small></strong></div></div><div className="stat"><span className="stat-icon green"><Leaf size={20}/></span><div><span>Landscape features</span><strong>{loading?"—":campus?.features.filter(f=>f.kind==="park").length}<small>green spaces</small></strong></div></div><div className="stat"><span className="stat-icon blue"><Move3D size={20}/></span><div><span>Spatial reference</span><strong className="text-stat">WGS 84<small>Real-world coordinates</small></strong></div></div><div className="stat snapshot-stat"><span className="stat-icon"><Layers3 size={20}/></span><div><span>Data snapshot</span><strong className="text-stat">{campus?new Date(campus.fetchedAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}):"—"}<small>Not live sensor data</small></strong></div></div></div>
         </section>
