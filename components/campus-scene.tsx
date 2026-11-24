@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import type { Campus, Feature, Layers, ViewMode, ViewerAction } from "@/lib/types";
+import type { Campus, Feature, Layers, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 
 type SceneState = {
   scene: THREE.Scene; camera: THREE.PerspectiveCamera; renderer: THREE.WebGLRenderer;
@@ -25,15 +25,33 @@ function disposeObject(object: THREE.Object3D) {
   });
 }
 
-export default function CampusScene({ campus, layers, selected, onSelect, view, action, modelFile, onError, onModelError, onReady }: {
+// STL files are Z-up by convention (slicers, 3d-print, py-touch-mapper); glTF is Y-up.
+function fitModel(s: SceneState, upAxis: UpAxis) {
+  const pivot = s.model.children[0];
+  if (!pivot) return false;
+  pivot.position.set(0, 0, 0); pivot.scale.setScalar(1);
+  pivot.rotation.set(upAxis === "z" ? -Math.PI / 2 : 0, 0, 0);
+  let box = new THREE.Box3().setFromObject(pivot);
+  const maxSize = Math.max(...box.getSize(new THREE.Vector3()).toArray());
+  if (!Number.isFinite(maxSize) || maxSize <= 0) return false;
+  pivot.scale.setScalar(s.span * .55 / maxSize);
+  box = new THREE.Box3().setFromObject(pivot);
+  const center = box.getCenter(new THREE.Vector3());
+  pivot.position.sub(new THREE.Vector3(center.x, box.min.y, center.z));
+  s.controls.target.set(0, (box.max.y - box.min.y) / 2, 0); s.camera.position.copy(s.initial); s.focus = undefined; s.controls.update(); s.invalidate();
+  return true;
+}
+
+export default function CampusScene({ campus, layers, selected, onSelect, view, action, modelFile, upAxis, onError, onModelError, onReady }: {
   campus: Campus; layers: Layers; selected: string | null; onSelect: (f: Feature | null) => void;
-  view: ViewMode; action: ViewerAction | null; modelFile: File | null;
+  view: ViewMode; action: ViewerAction | null; modelFile: File | null; upAxis: UpAxis;
   onError: (error: string) => void; onModelError: () => void; onReady: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const state = useRef<SceneState | null>(null);
   const lastAction = useRef<ViewerAction | null>(null);
   const callbacks = useRef({ onSelect, onError, onModelError, onReady });
+  const upAxisRef = useRef(upAxis);
   useEffect(() => { callbacks.current = { onSelect, onError, onModelError, onReady }; }, [onSelect, onError, onModelError, onReady]);
 
   useEffect(() => {
@@ -247,18 +265,14 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
           object=(await new GLTFLoader(manager).parseAsync(await modelFile.arrayBuffer(),"")).scene;
         } else throw new Error("Choose a binary .glb or .stl file.");
         if(cancelled){disposeObject(object);return;}
-        let box=new THREE.Box3().setFromObject(object);
-        const maxSize=Math.max(...box.getSize(new THREE.Vector3()).toArray());
-        if(!Number.isFinite(maxSize)||maxSize<=0) {disposeObject(object);throw new Error("The model contains no usable geometry.");}
-        object.scale.multiplyScalar(s.span*.55/maxSize);
-        box=new THREE.Box3().setFromObject(object);
-        const center=box.getCenter(new THREE.Vector3());
-        object.position.sub(new THREE.Vector3(center.x,box.min.y,center.z));
-        s.model.add(object);s.controls.target.set(0,s.span*.12,0);s.camera.position.copy(s.initial);s.invalidate();callbacks.current.onReady();
+        const pivot=new THREE.Group(); pivot.add(object); s.model.add(pivot);
+        if(!fitModel(s,upAxisRef.current)) {disposeObject(s.model);s.model.clear();throw new Error("The model contains no usable geometry.");}
+        callbacks.current.onReady();
       }catch{if(!cancelled){callbacks.current.onModelError();callbacks.current.onError("Could not open this model. Choose a valid STL or self-contained GLB file.");}}
     };
     void load();
     return ()=>{cancelled=true;disposeObject(s.model);s.model.clear();};
   },[modelFile,campus]);
+  useEffect(()=>{ upAxisRef.current=upAxis; const s=state.current; if(s) fitModel(s,upAxis); },[upAxis]);
   return <div className="scene-canvas" ref={container}/>;
 }
