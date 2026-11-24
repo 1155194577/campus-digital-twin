@@ -3,13 +3,14 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Campus, Feature, Layers, Point, ViewMode, ViewerAction } from "@/lib/types";
 import { createMapClickGesture } from "@/lib/map-click-gesture";
 
 type SceneState = {
   scene: THREE.Scene; camera: THREE.PerspectiveCamera; renderer: THREE.WebGLRenderer;
   controls: OrbitControls; groups: Record<keyof Layers, THREE.Group>; buildings: THREE.Mesh[];
-  model: THREE.Group; span: number; focus?: THREE.Vector3; initial: THREE.Vector3;
+  model: THREE.Group; span: number; focus?: THREE.Vector3; initial: THREE.Vector3; invalidate: () => void;
   route: THREE.Group;
 };
 
@@ -94,36 +95,92 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     const groundEdge = new THREE.LineSegments(new THREE.EdgesGeometry(ground.geometry), new THREE.LineBasicMaterial({ color: "#bed0c7", transparent: true, opacity: .6 }));
     groundEdge.position.copy(ground.position); scene.add(groundEdge);
     const buildings: THREE.Mesh[] = [];
+    const roads = new Map<string, THREE.BufferGeometry[]>();
+    const outlines: THREE.BufferGeometry[] = [];
+    const surfaces = { park: [] as THREE.BufferGeometry[], water: [] as THREE.BufferGeometry[] };
     for (const feature of campus.features) {
       const points = feature.points;
       if (points.length < 2) continue;
       if (feature.kind === "road") {
-        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points.map(p => new THREE.Vector3(p[0], .9, p[1]))), new THREE.LineBasicMaterial({ color: feature.category === "footway" || feature.category === "path" ? "#fefcf4" : "#bdc8c7" }));
-        groups.road.add(line); continue;
+        const color = feature.category === "footway" || feature.category === "path" ? "#fefcf4" : "#bdc8c7";
+        const positions = new Float32Array((points.length - 1) * 6);
+        for (let i = 1; i < points.length; i++) {
+          positions.set([points[i-1][0], .9, points[i-1][1], points[i][0], .9, points[i][1]], (i - 1) * 6);
+        }
+        const segments = roads.get(color) ?? [];
+        segments.push(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(positions, 3)));
+        roads.set(color, segments);
+        continue;
       }
       const shape = new THREE.Shape(points.map(p => new THREE.Vector2(p[0], -p[1])));
       const height = feature.kind === "building" ? feature.height : .4;
       const geometry = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false });
       geometry.rotateX(-Math.PI / 2);
-      const color = feature.kind === "building" ? (feature.name ? "#d3dce0" : "#e1e6e4") : feature.kind === "water" ? "#9dcbd1" : "#a6c7ae";
+      if (feature.kind !== "building") {
+        surfaces[feature.kind].push(geometry.translate(0, feature.kind === "water" ? -.3 : .15, 0));
+        continue;
+      }
+      const color = feature.name ? "#d3dce0" : "#e1e6e4";
       const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: .85, metalness: .02 }));
-      mesh.position.y = feature.kind === "building" ? 1 : feature.kind === "water" ? -.3 : .15;
+      mesh.position.y = 1;
       mesh.userData = { feature, baseColor: color };
       groups[feature.kind].add(mesh);
-      if (feature.kind === "building") {
-        buildings.push(mesh);
-        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 30), new THREE.LineBasicMaterial({color:"#819a9e",transparent:true,opacity:.35}));
-        mesh.add(edges);
-      }
+      buildings.push(mesh);
+      outlines.push(new THREE.EdgesGeometry(geometry, 30).translate(0, mesh.position.y, 0));
+    }
+    for (const [color, segments] of roads) {
+      groups.road.add(new THREE.LineSegments(mergeGeometries(segments), new THREE.LineBasicMaterial({ color })));
+      segments.forEach(geometry => geometry.dispose());
+    }
+    if (outlines.length) {
+      groups.building.add(new THREE.LineSegments(mergeGeometries(outlines), new THREE.LineBasicMaterial({ color: "#819a9e", transparent: true, opacity: .35 })));
+      outlines.forEach(geometry => geometry.dispose());
+    }
+    for (const kind of ["park", "water"] as const) {
+      const geometries = surfaces[kind];
+      if (!geometries.length) continue;
+      const color = kind === "water" ? "#9dcbd1" : "#a6c7ae";
+      groups[kind].add(new THREE.Mesh(mergeGeometries(geometries), new THREE.MeshStandardMaterial({ color, roughness: .85, metalness: .02 })));
+      geometries.forEach(geometry => geometry.dispose());
     }
     const model = new THREE.Group();
     const route = new THREE.Group();
     scene.add(model, route);
-    state.current = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial };
-    const resize = () => { const { width, height } = host.getBoundingClientRect(); if (!width || !height) return; renderer.setSize(width,height); camera.aspect = width/height; camera.updateProjectionMatrix(); };
+    let frame: number | undefined;
+    let ready = false;
+    let dirty = false;
+    let framesToSettle = 0;
+    const dampingFrames = Math.ceil(Math.log(.001) / Math.log(1 - controls.dampingFactor));
+    const schedule = () => { frame ??= requestAnimationFrame(render); };
+    const invalidate = () => { dirty = true; schedule(); };
+    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial, invalidate };
+    function render() {
+      if (sceneState.focus) {
+        const delta = sceneState.focus.clone().sub(controls.target).multiplyScalar(.12);
+        controls.target.add(delta); camera.position.add(delta);
+        if (controls.target.distanceTo(sceneState.focus)<.1) sceneState.focus=undefined;
+      }
+      const moved = controls.update();
+      if (dirty || moved) {
+        renderer.render(scene,camera);
+        if (!ready) { ready = true; callbacks.current.onReady(); }
+        dirty = false;
+      }
+      frame = undefined;
+      if (framesToSettle > 0) framesToSettle--;
+      if (moved || sceneState.focus || framesToSettle > 0) schedule();
+    }
+    state.current = sceneState;
+    controls.addEventListener("change", invalidate);
+    const resize = () => { const { width, height } = host.getBoundingClientRect(); if (!width || !height) return; renderer.setSize(width,height); camera.aspect = width/height; camera.updateProjectionMatrix(); invalidate(); };
     const observer = new ResizeObserver(resize); observer.observe(host); resize();
     const raycaster = new THREE.Raycaster();
     const gesture = createMapClickGesture();
+    const move = (event: PointerEvent) => {
+      if (!event.buttons && event.pointerType !== "touch") return;
+      framesToSettle = dampingFrames;
+      schedule();
+    };
     const up = (event: PointerEvent) => {
       if (!gesture.up(event) || model.children.length) return;
       const rect = renderer.domElement.getBoundingClientRect();
@@ -136,31 +193,28 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
       } else callbacks.current.onSelect(null);
     };
     renderer.domElement.addEventListener("pointerdown", gesture.down);
+    renderer.domElement.addEventListener("pointermove", move);
     renderer.domElement.addEventListener("pointerup", up);
     renderer.domElement.addEventListener("pointercancel", gesture.cancel);
     const lost = (event: Event) => { event.preventDefault(); callbacks.current.onError("The 3D graphics connection was interrupted. Reload the page to reconnect."); };
     renderer.domElement.addEventListener("webglcontextlost",lost);
-    let frame = 0;
-    const render = () => {
-      frame = requestAnimationFrame(render);
-      if (state.current?.focus) {
-        const delta = state.current.focus.clone().sub(controls.target).multiplyScalar(.12);
-        controls.target.add(delta); camera.position.add(delta);
-        if (controls.target.distanceTo(state.current.focus)<.1) state.current.focus=undefined;
-      }
-      controls.update(); renderer.render(scene,camera);
-    };
-    render(); callbacks.current.onReady();
+    invalidate();
     return () => {
-      cancelAnimationFrame(frame); observer.disconnect(); controls.dispose();
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      observer.disconnect(); controls.removeEventListener("change", invalidate); controls.dispose();
       renderer.domElement.removeEventListener("pointerdown",gesture.down); renderer.domElement.removeEventListener("pointerup",up);
       renderer.domElement.removeEventListener("pointercancel",gesture.cancel);
+      renderer.domElement.removeEventListener("pointermove",move);
       renderer.domElement.removeEventListener("webglcontextlost",lost);
       disposeObject(scene); renderer.dispose(); host.removeChild(renderer.domElement); state.current=null;
     };
   }, [campus]);
 
-  useEffect(() => { const s=state.current; if(s) for(const key of Object.keys(layers) as (keyof Layers)[]) s.groups[key].visible=layers[key] && !modelFile; }, [layers, campus, modelFile]);
+  useEffect(() => {
+    const s=state.current; if(!s)return;
+    for(const key of Object.keys(layers) as (keyof Layers)[]) s.groups[key].visible=layers[key] && !modelFile;
+    s.invalidate();
+  }, [layers, campus, modelFile]);
   useEffect(() => {
     const s = state.current; if(!s)return;
     for(const mesh of s.buildings) {
@@ -172,6 +226,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
       const feature=campus.features.find(f=>f.id===selected);
       if(feature) s.focus=new THREE.Vector3(feature.points.reduce((a,p)=>a+p[0],0)/feature.points.length,0,feature.points.reduce((a,p)=>a+p[1],0)/feature.points.length);
     }
+    s.invalidate();
   }, [selected,campus]);
   useEffect(() => {
     const s=state.current; if(!s)return;
@@ -182,12 +237,14 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     s.renderer.domElement.setAttribute("aria-label", `Interactive 3D campus map. Drag to ${view==="top"?"pan":"orbit"}, scroll to zoom, click buildings to inspect. Use the adjacent buttons for camera controls.`);
     s.camera.position.copy(s.controls.target).add(view==="top" ? new THREE.Vector3(0,distance,.01) : new THREE.Vector3(.5,.72,.65).normalize().multiplyScalar(distance));
     s.controls.update();
+    s.invalidate();
   },[view,campus]);
   useEffect(() => {
     const s = state.current;
     if (!s) return;
     disposeObject(s.route);
     s.route.clear();
+    s.invalidate();
     if (modelFile) return;
     const size = s.span * .032;
     if (routeStart) s.route.add(endpointMarker(routeStart, "A", "#073f75", size));
@@ -223,6 +280,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     const offset = view === "top" ? new THREE.Vector3(0, radius, .01) : new THREE.Vector3(.5, .72, .65).normalize().multiplyScalar(radius);
     s.camera.position.copy(center).add(offset);
     s.controls.update();
+    s.invalidate();
   }, [campus, modelFile, routeStart, routeDestination, routePath, view]);
   useEffect(()=>{
     const s=state.current; if(!s||!action||lastAction.current===action)return;
@@ -237,11 +295,13 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
       if(mesh) {const center=new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());s.controls.target.copy(center);s.camera.position.copy(center).add(new THREE.Vector3(130,150,160));s.focus=undefined;}
     }
     s.controls.update();
+    s.invalidate();
   },[action,selected]);
   useEffect(()=>{
     const s=state.current; if(!s)return;
     let cancelled=false;
     s.model.clear();
+    s.invalidate();
     if(!modelFile)return;
     const load=async()=>{
       try {
@@ -265,7 +325,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
         box=new THREE.Box3().setFromObject(object);
         const center=box.getCenter(new THREE.Vector3());
         object.position.sub(new THREE.Vector3(center.x,box.min.y,center.z));
-        s.model.add(object);s.controls.target.set(0,s.span*.12,0);s.camera.position.copy(s.initial);callbacks.current.onReady();
+        s.model.add(object);s.controls.target.set(0,s.span*.12,0);s.camera.position.copy(s.initial);s.invalidate();callbacks.current.onReady();
       }catch{if(!cancelled){callbacks.current.onModelError();callbacks.current.onError("Could not open this model. Choose a valid STL or self-contained GLB file.");}}
     };
     void load();
