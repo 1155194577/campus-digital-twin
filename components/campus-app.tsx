@@ -39,6 +39,7 @@ export default function CampusApp() {
   const [mobileDirectory,setMobileDirectory]=useState(false);
   const upload=useRef<HTMLInputElement>(null);
   const viewer=useRef<HTMLDivElement>(null);
+  const directoryToggle=useRef<HTMLButtonElement>(null);
   const aboutDialog=useRef<HTMLDialogElement>(null);
   const search=useRef<HTMLInputElement>(null);
   const detailsHeading=useRef<HTMLHeadingElement>(null);
@@ -73,7 +74,7 @@ export default function CampusApp() {
   const closeDetails=()=>{
     setSelected(null);
     const trigger=detailsTrigger.current;
-    if (trigger) (trigger.getClientRects().length ? trigger : viewer.current?.querySelector<HTMLButtonElement>(".mobile-directory-toggle"))?.focus();
+    if (trigger) (trigger.getClientRects().length ? trigger : directoryToggle.current)?.focus();
     detailsTrigger.current=null;
   };
   useEffect(()=>{
@@ -135,7 +136,7 @@ export default function CampusApp() {
           <div className="directory-footer"><span className="small-dot"/>Built on open geographic data<button onClick={showInfo} aria-label="Read map attribution"><ArrowUpRight size={13}/></button></div>
         </section>
         <section className="map-section" id="map-view" aria-labelledby="map-title" tabIndex={-1}>
-          <div className="map-toolbar"><div className="map-breadcrumb"><span className="toolbar-icon"><MapPin size={16}/></span><strong>{modelFile?modelFile.name:current.short}</strong><ChevronRight size={13}/><span>{modelFile?"Model viewer":"Campus overview"}</span></div><div className="view-switch" role="group" aria-label="Map view"><button className={view==="perspective"?"selected":""} aria-pressed={view==="perspective"} onClick={()=>setView("perspective")}><Box size={14}/>3D</button><button className={view==="top"?"selected":""} aria-pressed={view==="top"} onClick={()=>setView("top")}><Map size={14}/>Top</button></div><button className="icon-button mobile-directory-toggle" aria-label="Open campus directory" onClick={()=>setMobileDirectory(true)}><Layers3 size={18}/></button></div>
+          <div className="map-toolbar"><div className="map-breadcrumb"><span className="toolbar-icon"><MapPin size={16}/></span><strong>{modelFile?modelFile.name:current.short}</strong><ChevronRight size={13}/><span>{modelFile?"Model viewer":"Campus overview"}</span></div><div className="view-switch" role="group" aria-label="Map view"><button className={view==="perspective"?"selected":""} aria-pressed={view==="perspective"} onClick={()=>setView("perspective")}><Box size={14}/>3D</button><button className={view==="top"?"selected":""} aria-pressed={view==="top"} onClick={()=>setView("top")}><Map size={14}/>Top</button></div><button ref={directoryToggle} className="icon-button mobile-directory-toggle" aria-label="Open campus directory" onClick={()=>setMobileDirectory(true)}><Layers3 size={18}/></button></div>
           <div className="viewer" ref={viewer}>
             <CampusScene campus={loading ? null : campus} layers={layers} selected={selected?.id??null} onSelect={select} view={view} action={action} modelFile={modelFile} onError={showError} onModelError={clearFailedModel} onReady={ready}/>
             {(loading||!sceneReady)&&!error&&<div className="loading-overlay" role="status"><LoaderCircle className="spin" size={28}/><strong>Bringing campus into focus</strong><span>Preparing your 3D view…</span></div>}
