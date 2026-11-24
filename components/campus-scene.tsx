@@ -415,8 +415,9 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     s.model.clear();
     const hadModel = Boolean(s.modelBounds);
     s.modelBounds = undefined;
+    if (hadModel && s.view === "top") fitTopView(s);
     s.invalidate();
-    if(!modelFiles.length){if(hadModel && s.view === "top")fitTopView(s);callbacks.current.onReady();return;}
+    if(!modelFiles.length){callbacks.current.onReady();return;}
     const load=async()=>{
       try {
         const pivot=new THREE.Group();
