@@ -51,3 +51,22 @@ test("exports only bounded geography and includes endpoints and the mapped path"
     }
   }
 });
+
+test("clips coastline ways to the area and omits those outside it", () => {
+  const area = tactileArea(center, route.points);
+  const data = tactileGeoJson({ center, features: [], coastline: [
+    [[-90, 0], [90, 0], [90, 10], [-90, 10]],
+    [[-90, -90], [-70, -70]],
+  ] }, area, [null, null], null);
+  assert.equal(data.features.length, 1);
+  const [coast] = data.features;
+  assert.equal(coast.properties.kind, "coastline");
+  assert.equal(coast.geometry.type, "MultiLineString");
+  assert.equal(coast.geometry.coordinates.length, 2);
+  for (const line of coast.geometry.coordinates) {
+    assert.equal(line.length, 2);
+    for (const [lon, lat] of line) {
+      assert.ok(lon >= data.bbox[0] && lon <= data.bbox[2] && lat >= data.bbox[1] && lat <= data.bbox[3]);
+    }
+  }
+});

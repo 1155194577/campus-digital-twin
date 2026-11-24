@@ -55,24 +55,35 @@ function clipSegment([x, y]: Point, [endX, endY]: Point, [minX, minY, maxX, maxY
   return start < end && (dx || dy) ? [[x + start * dx, y + start * dy], [x + end * dx, y + end * dy]] : null;
 }
 
+function insideBounds([x, y]: Point, [minX, minY, maxX, maxY]: Bounds) {
+  return x >= minX && x <= maxX && y >= minY && y <= maxY;
+}
+
+function boundedLine(points: Point[], center: Point, bounds: Bounds): Geometry | null {
+  const lines: Point[][] = [];
+  let line: Point[] | undefined;
+  for (let i = 1; i < points.length; i++) {
+    const segment = clipSegment(points[i - 1], points[i], bounds);
+    if (!segment) { line = undefined; continue; }
+    if (line && insideBounds(points[i - 1], bounds)) line.push(segment[1]);
+    else { line = [...segment]; lines.push(line); }
+  }
+  if (!lines.length) return null;
+  const coords = (line: Point[]) => line.map(point => toWgs84(center, point));
+  return lines.length === 1 ? { type: "LineString", coordinates: coords(lines[0]) } : { type: "MultiLineString", coordinates: lines.map(coords) };
+}
+
 function boundedFeature(feature: Feature, center: Point, bounds: Bounds): GeoFeature | null {
-  const inside = ([x, y]: Point) => x >= bounds[0] && x <= bounds[2] && y >= bounds[1] && y <= bounds[3];
+  const inside = (point: Point) => insideBounds(point, bounds);
   const coords = (points: Point[]) => points.map(point => toWgs84(center, point));
   let geometry: Geometry;
   if (feature.points.length === 1) {
     if (!inside(feature.points[0])) return null;
     geometry = { type: "Point", coordinates: coords(feature.points)[0] };
   } else if (feature.kind === "road") {
-    const lines: Point[][] = [];
-    let line: Point[] | undefined;
-    for (let i = 1; i < feature.points.length; i++) {
-      const segment = clipSegment(feature.points[i - 1], feature.points[i], bounds);
-      if (!segment) { line = undefined; continue; }
-      if (line && inside(feature.points[i - 1])) line.push(segment[1]);
-      else { line = [...segment]; lines.push(line); }
-    }
-    if (!lines.length) return null;
-    geometry = lines.length === 1 ? { type: "LineString", coordinates: coords(lines[0]) } : { type: "MultiLineString", coordinates: lines.map(coords) };
+    const clipped = boundedLine(feature.points, center, bounds);
+    if (!clipped) return null;
+    geometry = clipped;
   } else {
     if (!feature.points.every(inside)) return null;
     geometry = { type: "Polygon", coordinates: [coords(feature.points)] };
@@ -88,6 +99,10 @@ export function tactileGeoJson(campus: Campus, area: Area, endpoints: [Endpoint 
   for (const feature of campus.features) {
     const bounded = boundedFeature(feature, campus.center, area.local);
     if (bounded) features.push(bounded);
+  }
+  for (const points of campus.coastline ?? []) {
+    const geometry = boundedLine(points, campus.center, area.local);
+    if (geometry) features.push({ type: "Feature", geometry, properties: { kind: "coastline" } });
   }
   endpoints.forEach((endpoint, index) => {
     if (endpoint) features.push({
