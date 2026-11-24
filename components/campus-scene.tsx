@@ -6,7 +6,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { partColors } from "@/lib/types";
 import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
-import { campusFramePlanes } from "@/lib/campus-frame";
+import { campusFramePlanes, projectCampusFramePlane } from "@/lib/campus-frame";
 import { createMapClickGesture } from "@/lib/map-click-gesture";
 
 type CameraPose = { position: THREE.Vector3; target: THREE.Vector3 };
@@ -169,9 +169,13 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     const fill = new THREE.DirectionalLight(0xb7dbec, 1); fill.position.set(500,400,-400); scene.add(fill);
     const groups = { building: new THREE.Group(), road: new THREE.Group(), park: new THREE.Group(), water: new THREE.Group() };
     Object.values(groups).forEach(group => scene.add(group));
-    const clippingPlanes = campusFramePlanes(campus.width, campus.depth);
-    const ground = new THREE.Mesh(new THREE.BoxGeometry(campus.width, 8, campus.depth), new THREE.MeshStandardMaterial({ color: "#dce8dc", roughness: 1 }));
-    ground.position.y = -5; scene.add(ground);
+    const framePlanes = campusFramePlanes(campus.width, campus.depth);
+    const projectedPlanes = framePlanes.map(() => new THREE.Plane());
+    const clippingPlanes = [...framePlanes];
+    const groundTop = -1;
+    const groundThickness = 8;
+    const ground = new THREE.Mesh(new THREE.BoxGeometry(campus.width, groundThickness, campus.depth), new THREE.MeshStandardMaterial({ color: "#dce8dc", roughness: 1 }));
+    ground.position.y = groundTop - groundThickness / 2; scene.add(ground);
     const campusBounds = new THREE.Box3().setFromObject(ground);
     const groundEdge = new THREE.LineSegments(new THREE.EdgesGeometry(ground.geometry), new THREE.LineBasicMaterial({ color: "#bed0c7", transparent: true, opacity: .6 }));
     groundEdge.position.copy(ground.position); scene.add(groundEdge);
@@ -259,6 +263,12 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
       }
       const moved = controls.update();
       if (dirty || moved) {
+        if (sceneState.view === "top") {
+          framePlanes.forEach((plane, i) => projectCampusFramePlane(plane, groundTop, camera.position, projectedPlanes[i]));
+          if (clippingPlanes.length === framePlanes.length) clippingPlanes.push(...projectedPlanes);
+        } else {
+          clippingPlanes.length = framePlanes.length;
+        }
         renderer.render(scene,camera);
         updateNorthHeading();
         if (!ready) { ready = true; callbacks.current.onReady(); }
@@ -281,7 +291,6 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     };
     const observer = new ResizeObserver(resize); observer.observe(host); resize();
     const raycaster = new THREE.Raycaster();
-    const inFrame = (point: THREE.Vector3) => clippingPlanes.every(plane => plane.distanceToPoint(point) >= 0);
     const gesture = createMapClickGesture();
     const move = (event: PointerEvent) => {
       gesture.move(event);
@@ -293,11 +302,12 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
       if (!gesture.up(event) || model.children.length) return;
       const rect = renderer.domElement.getBoundingClientRect();
       raycaster.setFromCamera(new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1),camera);
-      const hit = groups.building.visible ? raycaster.intersectObjects(buildings,false).find(({ point }) => inFrame(point)) : null;
+      const hit = groups.building.visible ? raycaster.intersectObjects(buildings,false)
+        .find(({ point }) => clippingPlanes.every(plane => plane.distanceToPoint(point) >= 0)) : null;
       if (hit) callbacks.current.onSelect(hit.object.userData.feature);
       else if (callbacks.current.onMapPoint) {
         const ground = raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
-        if (ground && inFrame(ground)) callbacks.current.onMapPoint([ground.x, ground.z]);
+        if (ground && framePlanes.every(plane => plane.distanceToPoint(ground) >= 0)) callbacks.current.onMapPoint([ground.x, ground.z]);
       } else callbacks.current.onSelect(null);
     };
     renderer.domElement.addEventListener("pointerdown", gesture.down);
