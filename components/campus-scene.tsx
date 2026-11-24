@@ -5,19 +5,21 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { partColors } from "@/lib/types";
-import type { Campus, Feature, Layers, ModelInfo, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
+import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
+import { createMapClickGesture } from "@/lib/map-click-gesture";
 
 type SceneState = {
   scene: THREE.Scene; camera: THREE.PerspectiveCamera; renderer: THREE.WebGLRenderer;
   controls: OrbitControls; groups: Record<keyof Layers, THREE.Group>; buildings: THREE.Mesh[];
   model: THREE.Group; span: number; focus?: THREE.Vector3; initial: THREE.Vector3; invalidate: () => void;
+  route: THREE.Group;
   setActive: (active: boolean) => void;
 };
 
 function disposeObject(object: THREE.Object3D) {
   object.traverse(child => {
-    if (child instanceof THREE.Mesh || child instanceof THREE.Line) {
-      child.geometry?.dispose();
+    if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.Sprite) {
+      if (!(child instanceof THREE.Sprite)) child.geometry?.dispose();
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.forEach((m: THREE.Material) => {
         for (const value of Object.values(m)) if (value instanceof THREE.Texture) value.dispose();
@@ -25,6 +27,29 @@ function disposeObject(object: THREE.Object3D) {
       });
     }
   });
+}
+
+function endpointMarker(point: Point, label: string, color: string, size: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 64;
+  const context = canvas.getContext("2d")!;
+  context.beginPath();
+  context.arc(32, 32, 28, 0, 2 * Math.PI);
+  context.fillStyle = color;
+  context.fill();
+  context.lineWidth = 4;
+  context.strokeStyle = "white";
+  context.stroke();
+  context.fillStyle = "white";
+  context.font = "bold 32px sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(label, 32, 33);
+  const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, depthWrite: false, toneMapped: false }));
+  marker.position.set(point[0], 4, point[1]);
+  marker.scale.setScalar(size);
+  marker.renderOrder = 2;
+  return marker;
 }
 
 // STL files are Z-up by convention (slicers, 3d-print, py-touch-mapper); glTF is Y-up.
@@ -51,18 +76,19 @@ function fitModel(s: SceneState, upAxis: UpAxis, view: ViewMode): ModelInfo | nu
   return { parts: pivot.children.length, triangles: Math.round(triangles), size: [size.x, size.z, size.y].map(v => v < maxSize * 1e-9 ? 0 : v) as ModelInfo["size"] };
 }
 
-export default function CampusScene({ campus, layers, selected, onSelect, view, action, modelFiles, upAxis, active, onError, onModelError, onReady, onModelInfo }: {
+export default function CampusScene({ campus, layers, selected, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFiles, upAxis, active, onError, onModelError, onReady, onModelInfo }: {
   campus: Campus; layers: Layers; selected: string | null; onSelect: (f: Feature | null) => void;
+  onMapPoint?: (point: Point) => void; routeStart?: Point; routeDestination?: Point; routePath?: Point[];
   view: ViewMode; action: ViewerAction | null; modelFiles: File[]; upAxis: UpAxis; active: boolean;
   onError: (error: string) => void; onModelError: () => void; onReady: () => void; onModelInfo: (info: ModelInfo | null) => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const state = useRef<SceneState | null>(null);
   const lastAction = useRef<ViewerAction | null>(null);
-  const callbacks = useRef({ onSelect, onError, onModelError, onReady, onModelInfo });
+  const callbacks = useRef({ onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo });
   const upAxisRef = useRef(upAxis);
   const viewRef = useRef(view);
-  useEffect(() => { callbacks.current = { onSelect, onError, onModelError, onReady, onModelInfo }; }, [onSelect, onError, onModelError, onReady, onModelInfo]);
+  useEffect(() => { callbacks.current = { onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo }; }, [onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo]);
 
   useEffect(() => {
     if (!container.current) return;
@@ -151,7 +177,9 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
       groups[kind].add(new THREE.Mesh(mergeGeometries(geometries), new THREE.MeshStandardMaterial({ color, roughness: .85, metalness: .02 })));
       geometries.forEach(geometry => geometry.dispose());
     }
-    const model = new THREE.Group(); scene.add(model);
+    const model = new THREE.Group();
+    const route = new THREE.Group();
+    scene.add(model, route);
     let frame: number | undefined;
     let visible = true;
     let ready = false;
@@ -168,7 +196,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
         frame = undefined;
       }
     };
-    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, span, initial, invalidate, setActive };
+    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial, invalidate, setActive };
     function render() {
       if (sceneState.focus) {
         const delta = sceneState.focus.clone().sub(controls.target).multiplyScalar(.12);
@@ -190,30 +218,35 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
     const resize = () => { const { width, height } = host.getBoundingClientRect(); if (!width || !height) return; renderer.setSize(width,height); camera.aspect = width/height; camera.updateProjectionMatrix(); invalidate(); };
     const observer = new ResizeObserver(resize); observer.observe(host); resize();
     const raycaster = new THREE.Raycaster();
-    let start = [0,0];
-    const down = (event: PointerEvent) => { start = [event.clientX,event.clientY]; };
+    const gesture = createMapClickGesture();
     const move = (event: PointerEvent) => {
       if (!event.buttons && event.pointerType !== "touch") return;
       framesToSettle = dampingFrames;
       schedule();
     };
     const up = (event: PointerEvent) => {
-      if (Math.hypot(event.clientX-start[0], event.clientY-start[1]) > 5 || model.children.length) return;
+      if (!gesture.up(event) || model.children.length) return;
       const rect = renderer.domElement.getBoundingClientRect();
       raycaster.setFromCamera(new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1),camera);
       const hit = groups.building.visible ? raycaster.intersectObjects(buildings,false)[0] : null;
-      callbacks.current.onSelect(hit ? hit.object.userData.feature : null);
+      if (hit) callbacks.current.onSelect(hit.object.userData.feature);
+      else if (callbacks.current.onMapPoint) {
+        const ground = raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+        if (ground && Math.abs(ground.x) <= campus.width / 2 && Math.abs(ground.z) <= campus.depth / 2) callbacks.current.onMapPoint([ground.x, ground.z]);
+      } else callbacks.current.onSelect(null);
     };
-    renderer.domElement.addEventListener("pointerdown", down);
+    renderer.domElement.addEventListener("pointerdown", gesture.down);
     renderer.domElement.addEventListener("pointermove", move);
     renderer.domElement.addEventListener("pointerup", up);
+    renderer.domElement.addEventListener("pointercancel", gesture.cancel);
     const lost = (event: Event) => { event.preventDefault(); callbacks.current.onError("The 3D graphics connection was interrupted. Reload the page to reconnect."); };
     renderer.domElement.addEventListener("webglcontextlost",lost);
     invalidate();
     return () => {
       if (frame !== undefined) cancelAnimationFrame(frame);
       observer.disconnect(); controls.removeEventListener("change", invalidate); controls.dispose();
-      renderer.domElement.removeEventListener("pointerdown",down); renderer.domElement.removeEventListener("pointerup",up);
+      renderer.domElement.removeEventListener("pointerdown",gesture.down); renderer.domElement.removeEventListener("pointerup",up);
+      renderer.domElement.removeEventListener("pointercancel",gesture.cancel);
       renderer.domElement.removeEventListener("pointermove",move);
       renderer.domElement.removeEventListener("webglcontextlost",lost);
       disposeObject(scene); renderer.dispose(); host.removeChild(renderer.domElement); state.current=null;
@@ -250,6 +283,49 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
     s.controls.update();
     s.invalidate();
   },[view,campus]);
+  useEffect(() => {
+    const s = state.current;
+    if (!s) return;
+    disposeObject(s.route);
+    s.route.clear();
+    s.invalidate();
+    if (modelFiles.length) return;
+    const size = s.span * .032;
+    if (routeStart) s.route.add(endpointMarker(routeStart, "A", "#073f75", size));
+    if (routeDestination) s.route.add(endpointMarker(routeDestination, "B", "#841d51", size));
+    if (routePath && routePath.length > 1) {
+      const positions: number[] = [];
+      const halfWidth = s.span * .0022;
+      for (let i = 1; i < routePath.length; i++) {
+        const [x, z] = routePath[i - 1];
+        const [endX, endZ] = routePath[i];
+        const length = Math.hypot(endX - x, endZ - z);
+        const dx = (endZ - z) / length * halfWidth, dz = (x - endX) / length * halfWidth;
+        positions.push(x + dx, 3, z + dz, endX + dx, 3, endZ + dz, endX - dx, 3, endZ - dz,
+          x + dx, 3, z + dz, endX - dx, 3, endZ - dz, x - dx, 3, z - dz);
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      const path = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: "#007570", side: THREE.DoubleSide, depthTest: false, depthWrite: false, toneMapped: false }));
+      path.renderOrder = 1;
+      s.route.add(path);
+    }
+  }, [campus, modelFiles, routeStart, routeDestination, routePath]);
+  useEffect(() => {
+    const s = state.current;
+    if (!s || !routeStart || !routeDestination || modelFiles.length) return;
+    const points = [routeStart, routeDestination, ...(routePath ?? [])];
+    const box = new THREE.Box3().setFromPoints(points.map(([x, z]) => new THREE.Vector3(x, 0, z)));
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const radius = Math.max(110, Math.hypot(size.x, size.z) * .6) / (Math.tan(THREE.MathUtils.degToRad(s.camera.fov / 2)) * Math.min(1, s.camera.aspect));
+    s.focus = undefined;
+    s.controls.target.copy(center);
+    const offset = view === "top" ? new THREE.Vector3(0, radius, .01) : new THREE.Vector3(.5, .72, .65).normalize().multiplyScalar(radius);
+    s.camera.position.copy(center).add(offset);
+    s.controls.update();
+    s.invalidate();
+  }, [campus, modelFiles, routeStart, routeDestination, routePath, view]);
   useEffect(()=>{
     const s=state.current; if(!s||!action||lastAction.current===action)return;
     lastAction.current=action;

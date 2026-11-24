@@ -25,6 +25,7 @@ No API keys, database, backend service or pre-commit hooks are required.
 
 - Real OpenStreetMap building footprints, roads, green spaces and water.
 - HKSTP and CUHK campus switching, bilingual building-name search and inspection.
+- A shareable walking-plan estimate using selected features or map points. The mapped path can include steps or crossings, and is not accessibility-verified.
 - Three.js orbit, pan, zoom, focus, reset, top-down view and layer visibility.
 - Side-by-side comparison with the full-detail HKSTP and CUHK tactile STLs, north up at the same geographic extent.
 - Local STL and self-contained GLB viewing, with a 50 MB file limit.
@@ -39,7 +40,9 @@ The compact snapshots in `public/data` were retrieved from the OpenStreetMap map
 | HKSTP | 114.205, 22.421, 114.216, 22.431 |
 | CUHK | 114.198, 22.410, 114.21515, 22.42845 |
 
-The bounds include surrounding buildings. Ground is flat. Building heights use mapped height values, or levels × 3.5 m, or a 14 m default; inferred values are labeled. Complex stitched multipolygon outer rings and polygon holes are not reconstructed. This is not a survey-grade, accessibility-routing, structural or navigation system.
+The bounds include surrounding buildings. The snapshot has no terrain or slope model. Building heights use mapped height values, or levels × 3.5 m, or a 14 m default; inferred values are labeled. Complex stitched multipolygon outer rings and polygon holes are not reconstructed. The walking planner uses OSM ways that are plausibly walkable and shares a graph junction only where the ways share an OSM node. It does not verify endpoint connections, crossings, current access, or accessibility. This is not a survey-grade, structural or navigation system.
+
+Routing unit tests (Node.js 22.18+): `node --test scripts/*.test.mjs`.
 
 To refresh snapshots, download the XML extracts, then run:
 
