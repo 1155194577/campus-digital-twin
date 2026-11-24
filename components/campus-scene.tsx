@@ -118,8 +118,9 @@ function fitModel(s: SceneState, upAxis: UpAxis): ModelInfo | null {
   return { parts: pivot.children.length, triangles: Math.round(triangles), size: [size.x, size.z, size.y].map(v => v < maxSize * 1e-9 ? 0 : v) as ModelInfo["size"] };
 }
 
-export default function CampusScene({ campus, layers, selected, showTransit, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFiles, upAxis, active, onError, onModelError, onReady, onModelInfo, onHeadingChange }: {
+export default function CampusScene({ campus, layers, selected, scheduledBuildings, showTransit, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFiles, upAxis, active, onError, onModelError, onReady, onModelInfo, onHeadingChange }: {
   campus: Campus; layers: Layers; selected: CampusPlace | null; showTransit: boolean; onSelect: (f: CampusPlace | null) => void;
+  scheduledBuildings?: ReadonlySet<string>;
   onMapPoint?: (point: Point) => void; routeStart?: Point; routeDestination?: Point; routePath?: Point[];
   view: ViewMode; action: ViewerAction | null; modelFiles: File[]; upAxis: UpAxis; active: boolean;
   onError: (error: string) => void; onModelError: () => void; onReady: () => void; onModelInfo: (info: ModelInfo | null) => void; onHeadingChange: (degrees: number) => void;
@@ -365,18 +366,23 @@ export default function CampusScene({ campus, layers, selected, showTransit, onS
   }, [campus, marker]);
   useEffect(() => {
     const s = state.current; if(!s)return;
-    let selectedMesh: THREE.Mesh | undefined;
     for(const mesh of s.buildings) {
       const isSelected = mesh.userData.feature.id === selected?.id;
-      if (isSelected) selectedMesh = mesh;
       const material=mesh.material as THREE.MeshStandardMaterial;
-      material.color.set(isSelected ? "#317cff" : mesh.userData.baseColor);
+      material.color.set(isSelected ? "#317cff" : scheduledBuildings?.has(mesh.userData.feature.id) ? "#087e70" : mesh.userData.baseColor);
       material.emissive.set(isSelected ? "#092649" : "#000000");
     }
+    s.invalidate();
+  }, [selected,campus,scheduledBuildings]);
+  useEffect(() => {
+    const s = state.current; if(!s)return;
     if (!selected) s.focus = undefined;
     else if (isTransitPlace(selected)) s.focus = transitPosition(selected, campus);
     else s.focus = new THREE.Vector3(selected.points.reduce((a,p)=>a+p[0],0)/selected.points.length,0,selected.points.reduce((a,p)=>a+p[1],0)/selected.points.length);
-    if (s.view === "top") s.topSelectionTarget = selectedMesh ? new THREE.Box3().setFromObject(selectedMesh).getCenter(new THREE.Vector3()) : s.focus?.clone();
+    if (s.view === "top") {
+      const selectedMesh = selected && s.buildings.find(mesh => mesh.userData.feature.id === selected.id);
+      s.topSelectionTarget = selectedMesh ? new THREE.Box3().setFromObject(selectedMesh).getCenter(new THREE.Vector3()) : s.focus?.clone();
+    }
     s.invalidate();
   }, [selected,campus]);
   useEffect(() => {

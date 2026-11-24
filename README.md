@@ -25,6 +25,7 @@ No API keys, database, backend service or pre-commit hooks are required.
 
 - Real OpenStreetMap building footprints, roads, green spaces and water.
 - HKSTP and CUHK campus switching, bilingual building-name search and inspection.
+- CUHK course timetable by date, Hong Kong time, and building or venue, with mapped buildings highlighted.
 - A shareable walking-plan estimate using selected features or map points. The mapped path can include steps or crossings, and is not accessibility-verified.
 - Three.js orbit, pan, zoom, focus, reset, top-down view and layer visibility.
 - Side-by-side comparison with the full-detail HKSTP and CUHK tactile STLs, north up at the same geographic extent.
@@ -43,7 +44,7 @@ The compact snapshots in `public/data` were retrieved from the OpenStreetMap map
 
 The bounds include surrounding buildings. The snapshot has no terrain or slope model. Building heights use mapped height values, or levels × 3.5 m, or a 14 m default; inferred values are labeled. Complex stitched multipolygon outer rings and polygon holes are not reconstructed. The walking planner uses OSM ways that are plausibly walkable and shares a graph junction only where the ways share an OSM node. It does not verify endpoint connections, crossings, current access, or accessibility. This is not a survey-grade, structural or navigation system.
 
-Routing and tactile handoff unit tests (Node.js 22.18+): `node --test scripts/*.test.mjs`.
+Unit tests (Node.js 22.18+): `node --test scripts/*.test.mjs`.
 
 To refresh snapshots, download the XML extracts, then run:
 
@@ -54,6 +55,18 @@ python3 scripts/prepare_campuses.py hkstp.osm cuhk.osm
 ```
 
 Local 3D files are processed in the browser and never uploaded. Models are normalized to fit the viewer; display scale is not a physical measurement. GLBs must embed their resources; external-resource loading is blocked. The existing [map-generation](https://github.com/1155194577/py-touch-mapper-hk) and [3D-print](https://github.com/1155194577/3d-print) projects are linked for context, not connected as services.
+
+### CUHK course timetable
+
+The timetable uses the [November 2026 CUHK course-data snapshot](https://github.com/cutopia-labs/cuhk-course-data/tree/427933d410e071917791b246fe1a17012e481e93). It is not a live feed. The generated file contains only course codes and titles, terms, sections, venues, and dated meeting times; unscheduled meetings and those without a venue are omitted. Unmatched venues remain searchable without a building highlight.
+
+To regenerate `public/data/cuhk-timetable.json`, check out the linked commit in a separate directory and run:
+
+```sh
+python3 scripts/prepare_cuhk_timetable.py /path/to/cuhk-course-data
+```
+
+The source lists dates at section level. The conversion associates dates with meetings by weekday; it cannot distinguish different dates for two meetings of the same section and weekday. If a source entry lists a date range, it is expanded on the listed weekday(s). Verify rooms and dates with CUHK before relying on the timetable.
 
 ### Tactile print references
 

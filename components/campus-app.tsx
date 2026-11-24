@@ -12,6 +12,7 @@ import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, Viewe
 import { buildWalkingGraph, distance, findWalkingRoute, formatEndpoint, parseEndpoint } from "@/lib/walking-route";
 import { formatBounds, tactileArea, tactileCommand, tactileGeoJson } from "@/lib/tactile-area";
 import RoutePlanner, { type EndpointSlot } from "./route-planner";
+import CourseTimetable from "./course-timetable";
 import PrintComparison from "./print-comparison";
 import TactileHandoff from "./tactile-handoff";
 
@@ -44,6 +45,8 @@ export default function CampusApp() {
   const [locationReady,setLocationReady]=useState(false);
   const [planning,setPlanning]=useState(false);
   const [tactileOpen,setTactileOpen]=useState(false);
+  const [timetableOpen,setTimetableOpen]=useState(false);
+  const [scheduledBuildings,setScheduledBuildings]=useState<ReadonlySet<string>>();
   const [choosing,setChoosing]=useState<EndpointSlot>("start");
   const [startKey,setStartKey]=useState<string|null>(null);
   const [destinationKey,setDestinationKey]=useState<string|null>(null);
@@ -216,6 +219,7 @@ export default function CampusApp() {
     link.href=url;link.download=`${activeCampus.id}-tactile-area.geojson`;link.click();URL.revokeObjectURL(url);
   };
   const showTactile=tab==="explore"&&tactileOpen&&!!area;
+  const showTimetable=tab==="explore"&&isCuhk&&timetableOpen&&!planning;
   const current=campuses.find(c=>c.id===campusId)!;
   const printMode=comparePrint&&tab==="explore";
   const showPrint=printMode&&campus&&!loading;
@@ -237,7 +241,7 @@ export default function CampusApp() {
       </header>
       <main>
       <div className="page-heading"><div><div className="eyebrow">YOUR CAMPUS, IN CONTEXT</div><h1>{tab==="explore"?"A new perspective on campus.":"Bring your models into view."}</h1><p>{tab==="explore"?"Explore the places, buildings and spaces that connect us.":"Inspect a scan or printable model, right in your browser."}</p></div><button className="secondary-button export-button" onClick={exportData} disabled={!campus||loading}><ArrowDownToLine size={16}/>Export map data</button></div>
-      <div className={`main-workspace ${(planning&&tab==="explore")||showTactile?"planning-workspace":""}`}>
+      <div className={`main-workspace ${(planning&&tab==="explore")||showTactile||showTimetable?"planning-workspace":""}`}>
         <section id="campus-directory" className={`directory ${mobileDirectory?"mobile-open":""}`} aria-label="Campus directory">
           <div className="directory-heading"><span className="section-label">WORKSPACE</span><button className="icon-button mobile-close" onClick={()=>setMobileDirectory(false)} aria-label="Close directory"><X size={17}/></button></div>
           <div className="campus-select"><span className="campus-icon"><Building2 size={21}/></span><div><label htmlFor="campus">Campus location</label><div className="select-wrap"><select id="campus" value={campusId} onChange={e=>{setCampusId(e.target.value);setSelectedId(null);clearRoute();}} aria-label="Campus location">{campuses.map(c=><option key={c.id} value={c.id}>{c.short} campus</option>)}</select><ChevronDown size={14}/></div></div></div>
@@ -264,8 +268,13 @@ export default function CampusApp() {
           <div className="directory-footer"><span className="small-dot"/>Built on open geographic data<button onClick={showInfo} aria-label="Read map attribution"><ArrowUpRight size={13}/></button></div>
         </section>
         <section className="map-section" id="map-view" aria-labelledby={showPrint?"print-heading":"map-title"} tabIndex={-1}>
-          {tab==="explore"&&<div className="route-toolbar"><button className="secondary-button" type="button" aria-expanded={planning} onClick={()=>{setComparePrint(false);togglePlanner();}}>{planning?"Close route planner":"Plan route"}</button><button className="secondary-button" type="button" aria-expanded={showTactile} onClick={()=>setTactileOpen(!tactileOpen)} disabled={!area} title={area?undefined:"Select a place or a route point first"}>Prepare tactile map</button></div>}
+          {tab==="explore"&&<div className="route-toolbar"><button className="secondary-button" type="button" aria-expanded={planning} onClick={()=>{setComparePrint(false);setTimetableOpen(false);togglePlanner();}}>{planning?"Close route planner":"Plan route"}</button><button className="secondary-button" type="button" aria-expanded={showTactile} onClick={()=>setTactileOpen(!tactileOpen)} disabled={!area} title={area?undefined:"Select a place or a route point first"}>Prepare tactile map</button>{isCuhk&&!planning&&<button className="secondary-button timetable-toggle" type="button" aria-expanded={showTimetable} onClick={()=>{setComparePrint(false);setTimetableOpen(!timetableOpen);}}>Course timetable</button>}</div>}
           {tab==="explore"&&planning&&!showPrint&&<RoutePlanner start={endpointLabel(start)} destination={endpointLabel(destination)} choosing={choosing} onChoose={setChoosing} onClear={clearRoute} estimate={start&&destination?distance(start.point,destination.point):null} route={route}/>}
+          {showTimetable&&<CourseTimetable selected={selected?.kind==="building"?selected:null} onHighlights={setScheduledBuildings} onSelect={featureId=>{
+            const feature=activeCampus.features.find(f=>f.id===featureId);
+            if(feature){setComparePrint(false);setLayers(previous=>({...previous,building:true}));}
+            select(feature??null);
+          }}/>}
           {showTactile&&area&&<TactileHandoff key={formatBounds(area.bbox)} bounds={formatBounds(area.bbox)} command={tactileCommand(area)} onExport={exportTactileArea}/>}
           <div className="map-toolbar">
             <div className="map-breadcrumb"><span className="toolbar-icon"><MapPin size={16}/></span><strong>{modelName??current.short}</strong><ChevronRight size={13}/><span>{modelFiles.length?"Model viewer":printMode?"Print comparison":"Campus overview"}</span></div>
@@ -280,7 +289,7 @@ export default function CampusApp() {
             {showPrint&&<PrintComparison campus={campus} layers={layers} selected={selected&&!isTransitPlace(selected)?selected:null}/>}
             <div className="campus-map-view" hidden={Boolean(showPrint)}>
               <div className="map-surface" ref={mapSurface}>
-                <CampusScene campus={loading?null:activeCampus} layers={layers} selected={planning?null:selected} showTransit={showTransit&&tab==="explore"} onSelect={select} onMapPoint={!showPrint&&planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFiles={modelFiles} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready} onModelInfo={setModelInfo} onHeadingChange={showNorthHeading}/>
+                <CampusScene campus={loading?null:activeCampus} layers={layers} selected={planning?null:selected} scheduledBuildings={showTimetable?scheduledBuildings:undefined} showTransit={showTransit&&tab==="explore"} onSelect={select} onMapPoint={!showPrint&&planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFiles={modelFiles} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready} onModelInfo={setModelInfo} onHeadingChange={showNorthHeading}/>
                 {(loading||!sceneReady)&&!error&&<div className="loading-overlay" role="status"><LoaderCircle className="spin" size={28}/><strong>{modelFiles.length?"Opening your model":"Bringing campus into focus"}</strong><span>Preparing your 3D view…</span></div>}
                 {error&&<div className="error-banner" role="alert"><Info size={17}/><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError("")}><X size={16}/></button></div>}
                 <div className="map-title"><span className="map-kicker">{modelFiles.length?"LOCAL MODEL":"CAMPUS DIGITAL TWIN"}</span><h2 id="map-title">{modelName??current.name}</h2><p className="map-subtitle">{modelFiles.length?"Your geometry. A different perspective.":campus?.subtitle}</p><p className="touch-hint">{view==="top"?"Drag to pan · Pinch to zoom":"Drag to orbit · Pinch to zoom · Two fingers to pan"}</p></div>
@@ -305,6 +314,7 @@ export default function CampusApp() {
                 <div className="feature-facts"><div><span>Height {selected.heightEstimated?"(estimated)":"(mapped)"}</span><strong>{selected.height.toFixed(1)}<small> m</small></strong></div><div><span>Footprint</span><strong>{selected.area?.toLocaleString()}<small> m²</small></strong></div></div>
                 <p className="height-note">{selected.heightEstimated?"Height inferred from levels, or a 14 m default. Not survey-grade.":"Height supplied by OpenStreetMap contributors."}</p>
                 <button className="primary-button" onClick={()=>command("focus")}><Crosshair size={15}/>Focus building</button>
+                {isCuhk&&!showTimetable&&<button className="osm-link" type="button" onClick={()=>{setTimetableOpen(true);requestAnimationFrame(()=>document.querySelector<HTMLInputElement>("#cuhk-timetable input")?.focus());}}>View building courses<ChevronRight size={12}/></button>}
                 <a className="osm-link" href={`https://www.openstreetmap.org/${selected.id.split("/").slice(0,2).join("/")}`} target="_blank" rel="noreferrer">View source feature<ArrowUpRight size={12}/></a>
               </>}
             </article>}
