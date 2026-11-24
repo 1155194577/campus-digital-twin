@@ -10,5 +10,6 @@ export type Feature = {
 };
 export type Campus = { id: string; name: string; subtitle: string; center: Point; width: number; depth: number; fetchedAt: string; features: Feature[]; walkDetails?: Record<string, { crossing?: boolean; tactilePaving?: string }> };
 export type Layers = { building: boolean; road: boolean; park: boolean; water: boolean };
+export type UpAxis = "y" | "z";
 export type ViewMode = "perspective" | "top";
 export type ViewerAction = { type: "zoomIn" | "zoomOut" | "reset" | "focus"; at: number };
