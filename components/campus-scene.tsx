@@ -6,6 +6,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { partColors } from "@/lib/types";
 import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
+import { campusFramePlanes } from "@/lib/campus-frame";
 import { createMapClickGesture } from "@/lib/map-click-gesture";
 
 type CameraPose = { position: THREE.Vector3; target: THREE.Vector3 };
@@ -133,6 +134,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.3;
+    renderer.localClippingEnabled = true;
     host.appendChild(renderer.domElement);
     renderer.domElement.tabIndex = 0;
     renderer.domElement.setAttribute("role", "group");
@@ -167,6 +169,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     const fill = new THREE.DirectionalLight(0xb7dbec, 1); fill.position.set(500,400,-400); scene.add(fill);
     const groups = { building: new THREE.Group(), road: new THREE.Group(), park: new THREE.Group(), water: new THREE.Group() };
     Object.values(groups).forEach(group => scene.add(group));
+    const clippingPlanes = campusFramePlanes(campus.width, campus.depth);
     const ground = new THREE.Mesh(new THREE.BoxGeometry(campus.width, 8, campus.depth), new THREE.MeshStandardMaterial({ color: "#dce8dc", roughness: 1 }));
     ground.position.y = -5; scene.add(ground);
     const campusBounds = new THREE.Box3().setFromObject(ground);
@@ -205,7 +208,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
         continue;
       }
       const color = feature.name ? "#d3dce0" : "#e1e6e4";
-      const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: .85, metalness: .02 }));
+      const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: .85, metalness: .02, clippingPlanes }));
       mesh.position.y = 1;
       campusBounds.max.y = Math.max(campusBounds.max.y, height + mesh.position.y);
       mesh.userData = { feature, baseColor: color };
@@ -214,18 +217,18 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
       outlines.push(new THREE.EdgesGeometry(geometry, 30).translate(0, mesh.position.y, 0));
     }
     for (const [color, segments] of roads) {
-      groups.road.add(new THREE.LineSegments(mergeGeometries(segments), new THREE.LineBasicMaterial({ color })));
+      groups.road.add(new THREE.LineSegments(mergeGeometries(segments), new THREE.LineBasicMaterial({ color, clippingPlanes })));
       segments.forEach(geometry => geometry.dispose());
     }
     if (outlines.length) {
-      groups.building.add(new THREE.LineSegments(mergeGeometries(outlines), new THREE.LineBasicMaterial({ color: "#819a9e", transparent: true, opacity: .35 })));
+      groups.building.add(new THREE.LineSegments(mergeGeometries(outlines), new THREE.LineBasicMaterial({ color: "#819a9e", transparent: true, opacity: .35, clippingPlanes })));
       outlines.forEach(geometry => geometry.dispose());
     }
     for (const kind of ["park", "water"] as const) {
       const geometries = surfaces[kind];
       if (!geometries.length) continue;
       const color = kind === "water" ? "#9dcbd1" : "#a6c7ae";
-      groups[kind].add(new THREE.Mesh(mergeGeometries(geometries), new THREE.MeshStandardMaterial({ color, roughness: .85, metalness: .02 })));
+      groups[kind].add(new THREE.Mesh(mergeGeometries(geometries), new THREE.MeshStandardMaterial({ color, roughness: .85, metalness: .02, clippingPlanes })));
       geometries.forEach(geometry => geometry.dispose());
     }
     const model = new THREE.Group();
@@ -278,6 +281,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
     };
     const observer = new ResizeObserver(resize); observer.observe(host); resize();
     const raycaster = new THREE.Raycaster();
+    const inFrame = (point: THREE.Vector3) => clippingPlanes.every(plane => plane.distanceToPoint(point) >= 0);
     const gesture = createMapClickGesture();
     const move = (event: PointerEvent) => {
       gesture.move(event);
@@ -289,11 +293,11 @@ export default function CampusScene({ campus, layers, selected, onSelect, onMapP
       if (!gesture.up(event) || model.children.length) return;
       const rect = renderer.domElement.getBoundingClientRect();
       raycaster.setFromCamera(new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1),camera);
-      const hit = groups.building.visible ? raycaster.intersectObjects(buildings,false)[0] : null;
+      const hit = groups.building.visible ? raycaster.intersectObjects(buildings,false).find(({ point }) => inFrame(point)) : null;
       if (hit) callbacks.current.onSelect(hit.object.userData.feature);
       else if (callbacks.current.onMapPoint) {
         const ground = raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
-        if (ground && Math.abs(ground.x) <= campus.width / 2 && Math.abs(ground.z) <= campus.depth / 2) callbacks.current.onMapPoint([ground.x, ground.z]);
+        if (ground && inFrame(ground)) callbacks.current.onMapPoint([ground.x, ground.z]);
       } else callbacks.current.onSelect(null);
     };
     renderer.domElement.addEventListener("pointerdown", gesture.down);
