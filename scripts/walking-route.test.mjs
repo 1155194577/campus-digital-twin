@@ -81,9 +81,22 @@ test("counts mapped tactile paving variants but not no or missing tags", () => {
 });
 
 test("round-trips named features and bounded map points for share links", () => {
-  const campus = { width: 100, depth: 100, features: [main] };
-  assert.deepEqual(parseEndpoint(campus, formatEndpoint({ point: [5.126, -3] })), { point: [5.13, -3] });
-  assert.deepEqual(parseEndpoint(campus, formatEndpoint({ featureId: "main", point: [50, 0] })), { point: [50, 0], featureId: "main" });
-  assert.equal(parseEndpoint(campus, "Infinity,0"), null);
+  const campus = { center: [22.419, 114.206], width: 400, depth: 400, features: [main] };
+  const point = [5.126, -3];
+  const key = formatEndpoint(campus, { point });
+  assert.equal(key, "pt:22.419027,114.206050");
+  assert.ok(Math.hypot(...parseEndpoint(campus, key).point.map((value, i) => value - point[i])) < 0.08);
+  assert.deepEqual(parseEndpoint(campus, formatEndpoint(campus, { featureId: "main", point: [50, 0] })), { point: [50, 0], featureId: "main" });
+  assert.equal(parseEndpoint(campus, "pt:Infinity,0"), null);
+  assert.equal(parseEndpoint(campus, "pt:22,114"), null);
   assert.equal(parseEndpoint(campus, "0,100"), null);
+});
+
+test("reprojects the same shared map point when the campus center changes", () => {
+  const older = { center: [22.417, 114.206], width: 1600, depth: 1600, features: [] };
+  const refreshed = { ...older, center: [22.419225, 114.206575] };
+  const key = formatEndpoint(older, { point: [400.88, 365.19] });
+  const endpoint = parseEndpoint(refreshed, key);
+  assert.ok(Math.hypot(endpoint.point[0] - 341.7, endpoint.point[1] - 612.88) < 0.08);
+  assert.equal(formatEndpoint(refreshed, endpoint), key);
 });

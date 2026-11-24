@@ -9,6 +9,8 @@ type SnapLink = { snap: Snap; cost: number };
 type Arrival = SnapLink & { node: string; previous?: Arrival; segment?: Segment };
 type Match = { cost: number; start: Snap; end: Snap; arrival?: Arrival };
 const endpointGapWeight = 2;
+const metersPerDegree = 111320;
+const longitudeScale = (latitude: number) => metersPerDegree * Math.cos(latitude * Math.PI / 180);
 export type WalkingRoute = {
   points: Point[];
   length: number;
@@ -37,15 +39,25 @@ export function parseEndpoint(campus: Campus, value: string | null): Endpoint | 
   if (!value) return null;
   const feature = campus.features.find(f => f.id === value);
   if (feature) return featureEndpoint(feature);
-  const coordinates = value.split(",");
+  if (!value.startsWith("pt:")) return null;
+  const coordinates = value.slice(3).split(",");
   if (coordinates.length !== 2 || coordinates.some(p => !p.trim())) return null;
-  const point = coordinates.map(Number) as Point;
-  if (!point.every(Number.isFinite) || Math.abs(point[0]) > campus.width / 2 || Math.abs(point[1]) > campus.depth / 2) return null;
+  const [latitude, longitude] = coordinates.map(Number);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+  const [centerLat, centerLon] = campus.center;
+  const point: Point = [(longitude - centerLon) * longitudeScale(centerLat), (centerLat - latitude) * metersPerDegree];
+  if (Math.abs(point[0]) > campus.width / 2 || Math.abs(point[1]) > campus.depth / 2) return null;
   return { point };
 }
 
-export function formatEndpoint(endpoint: Endpoint | null) {
-  return endpoint ? endpoint.featureId ?? endpoint.point.map(x => x.toFixed(2)).join(",") : null;
+export function formatEndpoint(campus: Campus, endpoint: Endpoint | null) {
+  if (!endpoint) return null;
+  if (endpoint.featureId) return endpoint.featureId;
+  const [centerLat, centerLon] = campus.center;
+  const [x, z] = endpoint.point;
+  const latitude = centerLat - z / metersPerDegree;
+  const longitude = centerLon + x / longitudeScale(centerLat);
+  return `pt:${latitude.toFixed(6)},${longitude.toFixed(6)}`;
 }
 
 export function buildWalkingGraph(campus: Campus): WalkingGraph {

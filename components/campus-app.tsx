@@ -121,7 +121,10 @@ export default function CampusApp() {
       if (!start) setChoosing("start");
     }
   },[choosing,destination,start]);
-  const onMapPoint=useCallback((point:Point)=>putEndpoint(formatEndpoint({point})!),[putEndpoint]);
+  const onMapPoint=useCallback((point:Point)=>{
+    const key=activeCampus&&formatEndpoint(activeCampus,{point});
+    if(key) putEndpoint(key);
+  },[activeCampus,putEndpoint]);
   const select=useCallback((feature:Feature|null)=>{
     detailsTrigger.current=null;
     if (planning && tab === "explore" && !comparePrint && feature) putEndpoint(feature.id);
