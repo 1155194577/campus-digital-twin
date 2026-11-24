@@ -45,7 +45,7 @@ function fitModel(s: SceneState, upAxis: UpAxis, view: ViewMode): ModelInfo | nu
   if (view === "top") { const distance = s.camera.position.distanceTo(s.controls.target); s.camera.position.copy(s.controls.target).add(new THREE.Vector3(0, distance, .01)); }
   s.controls.update(); s.invalidate();
   let triangles = 0;
-  pivot.traverse(child => { if (child instanceof THREE.Mesh) { const g = child.geometry as THREE.BufferGeometry; triangles += (g.index?.count ?? g.getAttribute("position")?.count ?? 0) / 3; } });
+  pivot.traverse(child => { if (child instanceof THREE.Mesh) { const g = child.geometry as THREE.BufferGeometry; triangles += (g.index?.count ?? g.getAttribute("position")?.count ?? 0) / 3 * (child instanceof THREE.InstancedMesh ? child.count : 1); } });
   return { parts: pivot.children.length, triangles: Math.round(triangles), size: [size.x, size.z, size.y] };
 }
 
