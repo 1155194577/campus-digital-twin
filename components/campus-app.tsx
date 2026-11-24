@@ -29,7 +29,7 @@ export default function CampusApp() {
   const viewer=useRef<HTMLDivElement>(null);
   useEffect(()=>{
     const controller=new AbortController();
-    setLoading(true);setSceneReady(false);setError("");setSelected(null);setQuery("");setModelFile(null);
+    setCampus(null);setLoading(true);setSceneReady(false);setError("");setSelected(null);setQuery("");setModelFile(null);setAction(null);
     fetch(`/data/${campusId}.json`,{signal:controller.signal}).then(r=>{if(!r.ok)throw new Error("Campus data could not be loaded. Please try again.");return r.json();}).then(data=>{setCampus(data);setLoading(false);}).catch(e=>{if(e.name!=="AbortError"){setError(e.message);setLoading(false);}});
     return ()=>controller.abort();
   },[campusId]);
@@ -52,7 +52,7 @@ export default function CampusApp() {
   const exportData=()=>{
     if(!campus)return;
     const file=new Blob([JSON.stringify({type:"FeatureCollection",attribution:"© OpenStreetMap contributors (ODbL)",snapshot:campus.fetchedAt,features:campus.features.map(f=>({type:"Feature",id:f.id,properties:{name:f.name,kind:f.kind,height:f.height,heightEstimated:f.heightEstimated},geometry:{type:f.kind==="road"?"LineString":"Polygon",coordinates:f.kind==="road"?f.points.map(p=>[p[0]/(111320*Math.cos(campus.center[0]*Math.PI/180))+campus.center[1],campus.center[0]-p[1]/111320]):[f.points.map(p=>[p[0]/(111320*Math.cos(campus.center[0]*Math.PI/180))+campus.center[1],campus.center[0]-p[1]/111320])]}}))})],{type:"application/geo+json"});
-    const url=URL.createObjectURL(file);const link=document.createElement("a");link.href=url;link.download=`${campusId}-campus.geojson`;link.click();URL.revokeObjectURL(url);
+    const url=URL.createObjectURL(file);const link=document.createElement("a");link.href=url;link.download=`${campus.id}-campus.geojson`;link.click();URL.revokeObjectURL(url);
   };
   const current=campuses.find(c=>c.id===campusId)!;
   return <div className="app-shell">
