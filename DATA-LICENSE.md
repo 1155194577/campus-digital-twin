@@ -10,7 +10,7 @@ The derived geographic snapshots in `public/data/hkstp.json` and `public/data/cu
 
 The included conversion script records each snapshot retrieval time in `fetchedAt` and preserves OSM feature identifiers. Inferred building heights and local projected coordinates are derived transformations, not surveyed measurements.
 
-The tactile reference images in `public/data/*-print.webp` also derive from OpenStreetMap, via Touch Mapper. The attribution above applies to both comparison panels.
+The tactile reference images in `public/data/*-print.webp` also derive from OpenStreetMap, via Touch Mapper. The attribution above applies to both comparison panels and to the Campus Atlas renders in `public/showcase/`.
 
 ## CUHK directory supplements
 

@@ -1,6 +1,9 @@
-# Campus Atlas
+# meshPotato and Campus Atlas
 
-A Next.js and Three.js geographic digital twin for Hong Kong Science Park (HKSTP) and The Chinese University of Hong Kong (CUHK).
+A Next.js technology showcase for meshPotato, with a Three.js geographic digital twin for Hong Kong Science Park (HKSTP) and The Chinese University of Hong Kong (CUHK).
+
+- `/` is the static company showcase. Project imagery is served locally, with attribution for OpenStreetMap-derived previews.
+- `/explore` opens Campus Atlas. Existing root links that encode a campus, selected place, or walking plan continue to open the viewer.
 
 ## Run
 

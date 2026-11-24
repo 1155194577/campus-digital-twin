@@ -227,7 +227,7 @@ export default function CampusApp() {
   return <div className="app-shell">
     <a className="skip-to-map" href="#map-view">Skip to map controls</a>
     <aside className="rail" aria-label="Main navigation">
-      <Link className="brand-mark" href="/" aria-label="Campus Atlas home"><Layers3 size={25}/></Link>
+      <Link className="brand-mark" href="/" aria-label="meshPotato home"><Layers3 size={25}/></Link>
       <div className="rail-divider"/>
       <button className={tab==="explore"?"rail-button active":"rail-button"} title="Campus explorer" aria-label="Campus explorer" aria-pressed={tab==="explore"} onClick={()=>{setTab("explore");setModelFiles([]);}}><Map size={21}/></button>
       <button className={tab==="models"?"rail-button active":"rail-button"} title="3D model viewer" aria-label="3D model viewer" aria-pressed={tab==="models"} onClick={()=>setTab("models")}><Box size={21}/></button>

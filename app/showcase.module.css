@@ -1,0 +1,123 @@
+.site {
+  --paper: #f7f5ed;
+  --ink: #17251e;
+  --muted: #4e5c51;
+  --line: #dbdfd2;
+  --moss: #365a40;
+  --dark: #1a2e25;
+  --accent: #dbe989;
+  --mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+.site a { text-decoration-thickness: 1px; text-underline-offset: 4px; }
+.site a:focus-visible { outline-color: #0a69ac; }
+.container { width: min(100% - 72px, 1216px); margin-inline: auto; }
+.skipLink { position: absolute; inset: 12px auto auto 12px; z-index: 1; padding: 8px 16px; background: white; transform: translateY(-160%); }
+.skipLink:focus { transform: translateY(0); }
+.header { border-bottom: 1px solid var(--line); }
+.headerInner, .footerInner { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 78px; }
+.wordmark { font-family: Manrope, var(--font); display: inline-flex; align-items: center; gap: 8px; font-weight: 800; letter-spacing: -.055em; font-size: 25px; white-space: nowrap; }
+.wordmark img { display: block; flex: none; }
+.nav { display: flex; gap: clamp(18px, 3vw, 38px); font-size: 14px; font-weight: 650; }
+.nav a:hover, .textLink:hover { text-decoration: underline; }
+.headerLink, .primaryLink, .textLink { display: inline-flex; align-items: center; gap: 9px; font-weight: 700; }
+.headerLink, .primaryLink { min-height: 44px; padding-inline: 15px; border-radius: 6px; font-size: 14px; white-space: nowrap; }
+.headerLink { border: 1px solid #aeb8a9; }
+.headerLink:hover { background: #ecede2; }
+.primaryLink { background: var(--dark); color: #fff; padding-inline: 18px; }
+.primaryLink:hover { background: #355340; }
+.textLink { font-size: 14px; }
+
+.hero { display: grid; grid-template-columns: 1fr 1.12fr; align-items: center; gap: clamp(30px, 5vw, 74px); padding-block: clamp(56px, 8vw, 108px); }
+.kicker { margin: 0 0 12px; font: 700 12px/1.45 var(--mono); letter-spacing: .095em; text-transform: uppercase; color: var(--moss); }
+.hero h1, .sectionHeading h2, .site h3 { font-family: Manrope, var(--font); }
+.hero h1 { margin: 0; font-size: clamp(50px, 7.2vw, 104px); line-height: .99; letter-spacing: -.085em; }
+.hero h1 em { display: block; color: var(--moss); font-style: normal; }
+.heroLead { max-width: 32ch; margin: 24px 0; font-size: clamp(17px, 2vw, 22px); color: var(--muted); line-height: 1.5; }
+.heroActions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 21px; }
+.heroArt { overflow: hidden; margin: 0; background: var(--dark); color: #f7f5ed; border: 1px solid var(--dark); border-radius: 14px; box-shadow: 0 18px 45px -30px #21332491; }
+.artStage { position: relative; }
+.campusArt { display: block; width: 100%; height: auto; aspect-ratio: 1.5; object-fit: cover; }
+.tactileInset { position: absolute; right: 3%; bottom: 5%; width: 30%; overflow: hidden; border: 1px solid #3d5749; border-radius: 7px; background: var(--dark); box-shadow: 0 8px 20px #1a2e2540; }
+.tactileInset img { display: block; width: 100%; height: auto; aspect-ratio: 1.9; object-fit: cover; }
+.tactileInset span { display: block; padding: 4px 6px; font: 700 9px/1.4 var(--mono); letter-spacing: .07em; }
+.artCaption, .artFooter { display: flex; gap: 8px 18px; align-items: center; justify-content: space-between; padding: 13px 16px; font: 600 10px/1.4 var(--mono); letter-spacing: .06em; }
+.artCaption i { display: inline-block; margin-right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.artFooter { color: #e0e6d7; }
+.artFooter a { text-decoration: underline; }
+
+.section { padding-block: clamp(47px, 7vw, 88px); }
+.sectionHeading { display: grid; grid-template-columns: 1.2fr 1fr; align-items: end; gap: 18px 28px; margin-bottom: 28px; }
+.sectionHeading h2 { margin: 0; font-size: clamp(34px, 5vw, 61px); line-height: 1.03; letter-spacing: -.067em; }
+.sectionHeading > p { max-width: 41ch; margin: 0; color: var(--muted); }
+.capabilityGrid, .projectGrid, .goalGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.capability { padding: 24px; border: 1px solid var(--line); border-radius: 10px; background: #fcfbf6; }
+.capability > svg { color: var(--moss); }
+.site h3 { margin: 0; font-size: clamp(20px, 2.25vw, 27px); line-height: 1.18; letter-spacing: -.035em; }
+.capability h3 { margin-top: 14px; }
+.capability p, .projectCopy p, .goal p { margin: 9px 0 0; color: var(--muted); }
+.capability ul { display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 18px 0 0; list-style: none; }
+.capability li { padding: 3px 8px; color: #284830; border-radius: 4px; background: #eaf0e1; font-size: 12px; font-weight: 700; }
+
+.work { border-block: 1px solid var(--line); background: #eeeee5; }
+.project { display: flex; flex-direction: column; border-radius: 10px; overflow: hidden; background: #fcfbf7; border: 1px solid #d4d8cd; }
+.projectArt, .workflow { margin: 0; background: #e8eeea; }
+.projectArt img { display: block; width: 100%; height: auto; aspect-ratio: 1.6; object-fit: cover; }
+.projectArt figcaption { min-height: 38px; padding: 7px 13px; color: #43564a; font-size: 11px; border-top: 1px solid #dce2d8; }
+.projectArt a { text-decoration: underline; }
+.workflow { aspect-ratio: 1.6; padding: 12px 18px; background: #dfdfc9; display: flex; flex-direction: column; justify-content: center; }
+.workflow p { margin: 0 0 9px; font: 700 11px/1.4 var(--mono); letter-spacing: .08em; color: #3a503b; }
+.workflow ol { display: grid; gap: 5px; margin: 0; padding-left: 25px; font-size: 14px; }
+.workflow li { padding: 3px 7px; border-bottom: 1px solid #aeb7a0; }
+.workflow li::marker { color: #405a45; font: 700 12px var(--mono); }
+.projectCopy { display: flex; flex-direction: column; align-items: flex-start; flex: 1; padding: 20px; }
+.projectCopy .projectCategory { margin: 0 0 7px; color: var(--moss); font-size: 12px; font-weight: 750; }
+.projectCopy .textLink { margin-top: auto; padding-top: 16px; }
+
+.sustainability { background: var(--dark); color: #f9f8ef; }
+.sustainability .kicker, .goal .goalNumber { color: var(--accent); }
+.sustainability .sectionHeading > p, .goal p { color: #e0e6d7; }
+.sustainability a:focus-visible { outline-color: var(--accent); }
+.goal { padding: 21px; border: 1px solid #54695a; border-radius: 8px; background: #243b30; }
+.goal .goalNumber { margin: 0 0 10px; font: 700 12px/1.4 var(--mono); letter-spacing: .1em; }
+.goal h3 { font-size: clamp(18px, 2vw, 24px); }
+.goal h3 a:hover { text-decoration: underline; }
+.goal h3 svg { display: inline; vertical-align: -.12em; }
+.goalNote { margin: 19px 0 0; color: #d0dbcb; font-size: 13px; }
+.footer { border-top: 1px solid var(--line); }
+.footerInner { padding-block: 10px; }
+.social { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 10px; color: var(--muted); font-size: 12px; }
+.socialButton:disabled { min-height: 40px; padding: 0 10px; border: 1px solid #aeb8a9; border-radius: 6px; opacity: 1; background: transparent; cursor: default; font-size: 13px; font-weight: 700; }
+
+@media (max-width: 880px) {
+  .container { width: min(100% - 48px, 1216px); }
+  .capability, .goal, .projectCopy { padding: 17px; }
+}
+
+@media (max-width: 700px) {
+  .container { width: calc(100% - 36px); }
+  .headerInner { min-height: 0; flex-wrap: wrap; gap: 4px 12px; padding: 12px 0 7px; }
+  .nav { order: 1; width: 100%; gap: 8px 21px; flex-wrap: wrap; }
+  .nav a { display: inline-flex; align-items: center; min-height: 44px; }
+  .hero, .sectionHeading { grid-template-columns: 1fr; }
+  .hero { gap: 27px; padding-block: 44px; }
+  .hero h1 { font-size: clamp(46px, 11vw, 75px); }
+  .heroLead { margin: 18px 0; }
+  .heroActions .textLink { min-height: 44px; }
+  .section { padding-block: 40px; }
+  .sectionHeading { gap: 12px; margin-bottom: 20px; }
+  .capabilityGrid, .projectGrid, .goalGrid { grid-template-columns: 1fr; gap: 12px; }
+  .projectCopy .textLink { min-height: 44px; padding-top: 11px; }
+  .footerInner { flex-wrap: wrap; gap: 8px 16px; padding-block: 14px; }
+  .footerInner .textLink { min-height: 44px; }
+}
+
+@media (max-width: 380px) {
+  .artCaption, .artFooter { padding-inline: 10px; font-size: 9px; }
+  .artFooter { flex-wrap: wrap; }
+}
