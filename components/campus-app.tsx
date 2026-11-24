@@ -10,6 +10,10 @@ const CampusScene = dynamic(() => import("./campus-scene"), { ssr: false });
 const campuses = [{id:"hkstp",short:"HKSTP",name:"Hong Kong Science Park",tag:"Science & innovation"},{id:"cuhk",short:"CUHK",name:"The Chinese University of Hong Kong",tag:"Education & research"}];
 const layerOptions = [{key:"building",name:"Buildings",icon:Building2,color:"#b7c7cd"},{key:"road",name:"Roads & pathways",icon:Map,color:"#c2c9c3"},{key:"park",name:"Green spaces",icon:Leaf,color:"#92b79d"},{key:"water",name:"Water bodies",icon:Waves,color:"#8abcc6"}] as const;
 
+function normalizeBuildingName(name: string) {
+  return name.normalize("NFKC").toLowerCase().replace(/['‘’ʼ.]/g,"").replace(/[\p{P}\s]+/gu," ").trim();
+}
+
 export default function CampusApp() {
   const [campusId,setCampusId]=useState("hkstp");
   const [campus,setCampus]=useState<Campus|null>(null);
@@ -35,7 +39,19 @@ export default function CampusApp() {
   },[campusId]);
   const buildings=useMemo(()=>campus?.features.filter(f=>f.kind==="building")??[],[campus]);
   const named=useMemo(()=>buildings.filter(f=>f.name).sort((a,b)=>a.name.localeCompare(b.name)),[buildings]);
-  const filtered=useMemo(()=>named.filter(f=>`${f.name} ${f.localName}`.toLowerCase().includes(query.toLowerCase())),[named,query]);
+  const footprintsByName=useMemo(()=>{
+    const groups=new globalThis.Map<string,Feature[]>();
+    for(const feature of named) {
+      const group=groups.get(feature.name);
+      if(group)group.push(feature);
+      else groups.set(feature.name,[feature]);
+    }
+    return groups;
+  },[named]);
+  const filtered=useMemo(()=>{
+    const search=normalizeBuildingName(query);
+    return named.filter(f=>normalizeBuildingName(`${f.name} ${f.localName??""}`).includes(search));
+  },[named,query]);
   const ready=useCallback(()=>setSceneReady(true),[]);
   const showError=useCallback((message:string)=>{setError(message);setSceneReady(true);},[]);
   const clearFailedModel=useCallback(()=>setModelFile(null),[]);
@@ -82,7 +98,12 @@ export default function CampusApp() {
             <div className="directory-rule"/>
             <div className="layer-heading"><h2>Building directory</h2><span className="count">{named.length}</span></div>
             <label className="search-field"><Search size={15}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Find a building…" aria-label="Find a building"/>{query&&<button onClick={()=>setQuery("")} aria-label="Clear search"><X size={13}/></button>}</label>
-            <div className="building-list" aria-live="polite">{loading?<div className="list-message">Loading campus…</div>:filtered.length?filtered.map(f=><button className={`building-row ${selected?.id===f.id?"selected":""}`} key={f.id} onClick={()=>{setLayers(l=>({...l,building:true}));select(f);}}><span className="building-icon"><Building2 size={16}/></span><span><strong>{f.name}</strong><small>{f.category==="yes"?"Campus building":f.category.replaceAll("_"," ")}</small></span><ChevronRight size={13}/></button>):<div className="list-message">No buildings found. Try another name.</div>}</div>
+            <div className="building-list" aria-live="polite">{loading?<div className="list-message">Loading campus…</div>:filtered.length?filtered.map(f=>{
+              const footprints=footprintsByName.get(f.name)??[];
+              const sameArea=footprints.filter(other=>other.area===f.area);
+              const footprintLabel=footprints.length>1&&(f.area!=null&&sameArea.length===1?`${f.area.toLocaleString()} m²`:`Footprint ${footprints.indexOf(f)+1}`);
+              return <button className={`building-row ${selected?.id===f.id?"selected":""}`} key={f.id} onClick={()=>{setLayers(l=>({...l,building:true}));select(f);}}><span className="building-icon"><Building2 size={16}/></span><span><strong>{f.name}</strong><small>{f.category==="yes"?"Campus building":f.category.replaceAll("_"," ")}{footprintLabel&&<span style={{textTransform:"none"}}> · {footprintLabel}</span>}</small></span><ChevronRight size={13}/></button>;
+            }):<div className="list-message">No buildings found. Try another name.</div>}</div>
           </>:<div className="model-panel"><div className="model-art"><FileBox size={40} strokeWidth={1.2}/></div><h2>Your models, a closer look.</h2><p>Open a scanned object or printable model to orbit, zoom and inspect it in 3D.</p><button className="primary-button" onClick={()=>upload.current?.click()}><Upload size={15}/>Open 3D model</button><small>STL or self-contained GLB · up to 50 MB</small>{modelFile&&<div className="loaded-model"><FileBox size={17}/><span>{modelFile.name}<small>{(modelFile.size/1024/1024).toFixed(2)} MB · Local file</small></span><button className="icon-button" onClick={()=>{setModelFile(null);setError("");}} aria-label="Remove model"><X size={15}/></button></div>}<div className="privacy-note"><Check size={14}/>Your model stays on this device.</div></div>}
           <button className="secondary-button mobile-export" onClick={exportData} disabled={!campus||loading}><ArrowDownToLine size={15}/>Export map data</button>
           <div className="directory-footer"><span className="small-dot"/>Built on open geographic data<button onClick={()=>setInfo(true)} aria-label="Read map attribution"><ArrowUpRight size={13}/></button></div>
