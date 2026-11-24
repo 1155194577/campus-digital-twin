@@ -26,6 +26,8 @@ function disposeObject(object: THREE.Object3D) {
   });
 }
 
+const partColors = ["#83a9d4", "#e3a65f", "#7fb38a", "#c48bc0"];
+
 // STL files are Z-up by convention (slicers, 3d-print, py-touch-mapper); glTF is Y-up.
 function fitModel(s: SceneState, upAxis: UpAxis, view: ViewMode) {
   const pivot = s.model.children[0];
@@ -45,9 +47,9 @@ function fitModel(s: SceneState, upAxis: UpAxis, view: ViewMode) {
   return true;
 }
 
-export default function CampusScene({ campus, layers, selected, onSelect, view, action, modelFile, upAxis, active, onError, onModelError, onReady }: {
+export default function CampusScene({ campus, layers, selected, onSelect, view, action, modelFiles, upAxis, active, onError, onModelError, onReady }: {
   campus: Campus; layers: Layers; selected: string | null; onSelect: (f: Feature | null) => void;
-  view: ViewMode; action: ViewerAction | null; modelFile: File | null; upAxis: UpAxis; active: boolean;
+  view: ViewMode; action: ViewerAction | null; modelFiles: File[]; upAxis: UpAxis; active: boolean;
   onError: (error: string) => void; onModelError: () => void; onReady: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
@@ -217,9 +219,9 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
   useEffect(() => { state.current?.setActive(active); }, [active, campus]);
   useEffect(() => {
     const s=state.current; if(!s)return;
-    for(const key of Object.keys(layers) as (keyof Layers)[]) s.groups[key].visible=layers[key] && !modelFile;
+    for(const key of Object.keys(layers) as (keyof Layers)[]) s.groups[key].visible=layers[key] && !modelFiles.length;
     s.invalidate();
-  }, [layers, campus, modelFile]);
+  }, [layers, campus, modelFiles]);
   useEffect(() => {
     const s = state.current; if(!s)return;
     for(const mesh of s.buildings) {
@@ -264,30 +266,38 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
     let cancelled=false;
     s.model.clear();
     s.invalidate();
-    if(!modelFile)return;
+    if(!modelFiles.length){callbacks.current.onReady();return;}
     const load=async()=>{
       try {
-        const extension=modelFile.name.split(".").pop()?.toLowerCase();
-        let object: THREE.Object3D;
-        if(extension==="stl") {
-          const {STLLoader}=await import("three/addons/loaders/STLLoader.js");
-          const geometry=new STLLoader().parse(await modelFile.arrayBuffer()); geometry.computeVertexNormals();
-          object=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:"#83a9d4",roughness:.5,metalness:.12,side:THREE.DoubleSide}));
-        } else if(extension==="glb") {
-          const {GLTFLoader}=await import("three/addons/loaders/GLTFLoader.js");
-          // Self-contained binary glTF only; external model resources are blocked.
-          const manager=new THREE.LoadingManager(); manager.setURLModifier(url=>{if(!url.startsWith("blob:")&&!url.startsWith("data:"))throw new Error("Use a self-contained GLB without external resources.");return url;});
-          object=(await new GLTFLoader(manager).parseAsync(await modelFile.arrayBuffer(),"")).scene;
-        } else throw new Error("Choose a binary .glb or .stl file.");
-        if(cancelled){disposeObject(object);return;}
-        const pivot=new THREE.Group(); pivot.add(object); s.model.add(pivot);
+        const pivot=new THREE.Group();
+        // Parts keep their shared origin (e.g. py-touch-mapper's map-ways.stl + map-rest.stl).
+        for(const [index,file] of modelFiles.entries()) {
+          const extension=file.name.split(".").pop()?.toLowerCase();
+          let object: THREE.Object3D;
+          if(extension==="stl") {
+            const {STLLoader}=await import("three/addons/loaders/STLLoader.js");
+            const geometry=new STLLoader().parse(await file.arrayBuffer());
+            if(!geometry.getAttribute("position")?.count){geometry.dispose();continue;}
+            geometry.computeVertexNormals();
+            object=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:partColors[index%partColors.length],roughness:.5,metalness:.12,side:THREE.DoubleSide}));
+          } else if(extension==="glb") {
+            const {GLTFLoader}=await import("three/addons/loaders/GLTFLoader.js");
+            // Self-contained binary glTF only; external model resources are blocked.
+            const manager=new THREE.LoadingManager(); manager.setURLModifier(url=>{if(!url.startsWith("blob:")&&!url.startsWith("data:"))throw new Error("Use a self-contained GLB without external resources.");return url;});
+            object=(await new GLTFLoader(manager).parseAsync(await file.arrayBuffer(),"")).scene;
+          } else throw new Error("Choose a binary .glb or .stl file.");
+          object.name=file.name; pivot.add(object);
+          if(cancelled)break;
+        }
+        if(cancelled){disposeObject(pivot);return;}
+        s.model.add(pivot);
         if(!fitModel(s,upAxisRef.current,viewRef.current)) {disposeObject(s.model);s.model.clear();throw new Error("The model contains no usable geometry.");}
         callbacks.current.onReady();
       }catch{if(!cancelled){callbacks.current.onModelError();callbacks.current.onError("Could not open this model. Choose a valid STL or self-contained GLB file.");}}
     };
     void load();
     return ()=>{cancelled=true;disposeObject(s.model);s.model.clear();};
-  },[modelFile,campus]);
+  },[modelFiles,campus]);
   useEffect(()=>{ upAxisRef.current=upAxis; const s=state.current; if(s) fitModel(s,upAxis,viewRef.current); },[upAxis]);
   return <div className="scene-canvas" ref={container}/>;
 }
