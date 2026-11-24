@@ -1,7 +1,7 @@
 import type { Feature, Point } from "./types";
 
 type TransitPoint = Pick<Feature, "id" | "name" | "localName" | "lat" | "lon">;
-type StationExit = TransitPoint & { kind: "exit"; exit: string };
+type StationExit = TransitPoint & { kind: "exit"; exit: string; localName: string };
 export type TransitPlace = (TransitPoint & { kind: "station" }) | StationExit;
 
 export type CampusPlace = Feature | TransitPlace;
@@ -47,7 +47,15 @@ const cuhkAliases: Record<string, string[]> = {
 export function placeAliases(campusId: string, place: CampusPlace) {
   if (campusId !== "cuhk") return [];
   if (place.kind === "station") return ["MTR", "MTR University Station", "University MTR", "港鐵大學站", "UNI"];
-  if (place.kind === "exit") return [`Exit ${place.exit}`, `Entrance ${place.exit}`, `MTR ${place.name}`, `${place.exit}出口`, `${place.exit} 出口`];
+  if (place.kind === "exit") return [
+    `Exit ${place.exit}`,
+    `Entrance ${place.exit}`,
+    `MTR Exit ${place.exit}`,
+    `MTR ${place.name}`,
+    `${place.exit}出口`,
+    `${place.exit} 出口`,
+    place.localName.replaceAll(" ", ""),
+  ];
   return cuhkAliases[place.id] ?? [];
 }
 
