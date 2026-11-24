@@ -131,7 +131,7 @@ export default function Home() {
         <section id="capabilities" className={`${styles.container} ${styles.section}`} aria-labelledby="capabilities-title">
           <div className={styles.sectionHeading}>
             <div><p className={styles.kicker}>01 / Capabilities</p><h2 id="capabilities-title">What we do</h2></div>
-            <p>We work across the digital and physical sides of engineering: modeling geometry, making parts and turning spatial data into tools people can use.</p>
+            <p>We work across the digital and physical sides of engineering: modeling geometry, making parts and turning spatial data into tools people can use. We also have a self-curated vector database.</p>
           </div>
           <div className={styles.capabilityGrid}>
             {capabilities.map(({ title, description, specialties, icon: Icon }) => (
