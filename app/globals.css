@@ -1,6 +1,15 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700;750;800&display=swap');
 
 .route-toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:8px 16px;background:#fff;border-bottom:1px solid var(--border)}
+.college-regions{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:5px 6px;padding:8px 16px;border-bottom:1px solid var(--border);font-size:12px}
+.college-regions strong{margin-right:4px}
+.college-regions button{min-height:26px;border:1px solid var(--border);border-radius:5px;padding:3px 7px;gap:5px;text-align:left}
+.college-regions button[aria-pressed=true]{color:var(--accent);border-color:currentColor;background:#edf3ff}
+.college-regions i{width:9px;height:9px;border-radius:2px;flex:none}
+.building-region-label{font-size:12px;font-weight:600;color:var(--text-muted);margin:6px 0}
+@media(min-width:951px), (min-width:651px) and (min-height:501px){
+  .main-workspace:not(.planning-workspace):has(.college-regions){min-height:700px}
+}
 .route-planner{padding:10px 16px;background:#f2f7f6;border-bottom:1px solid var(--border);font-size:12px}
 .route-planner p{margin:6px 0}
 .route-planner p:last-child{margin-bottom:0}

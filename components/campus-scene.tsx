@@ -11,6 +11,7 @@ import { partColors } from "@/lib/types";
 import type { Campus, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 import { campusFramePlanes, projectCampusFramePlane } from "@/lib/campus-frame";
 import { createMapClickGesture } from "@/lib/map-click-gesture";
+import { cuhkBuildingRegion, cuhkRegions, type CuhkRegion } from "@/lib/cuhk-regions";
 
 type CameraPose = { position: THREE.Vector3; target: THREE.Vector3 };
 
@@ -118,9 +119,10 @@ function fitModel(s: SceneState, upAxis: UpAxis): ModelInfo | null {
   return { parts: pivot.children.length, triangles: Math.round(triangles), size: [size.x, size.z, size.y].map(v => v < maxSize * 1e-9 ? 0 : v) as ModelInfo["size"] };
 }
 
-export default function CampusScene({ campus, layers, selected, scheduledBuildings, showTransit, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFiles, upAxis, active, onError, onModelError, onReady, onModelInfo, onHeadingChange }: {
+export default function CampusScene({ campus, layers, selected, scheduledBuildings, colorRegions, highlightedRegion, showTransit, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFiles, upAxis, active, onError, onModelError, onReady, onModelInfo, onHeadingChange }: {
   campus: Campus; layers: Layers; selected: CampusPlace | null; showTransit: boolean; onSelect: (f: CampusPlace | null) => void;
   scheduledBuildings?: ReadonlySet<string>;
+  colorRegions: boolean; highlightedRegion: CuhkRegion | null;
   onMapPoint?: (point: Point) => void; routeStart?: Point; routeDestination?: Point; routePath?: Point[];
   view: ViewMode; action: ViewerAction | null; modelFiles: File[]; upAxis: UpAxis; active: boolean;
   onError: (error: string) => void; onModelError: () => void; onReady: () => void; onModelInfo: (info: ModelInfo | null) => void; onHeadingChange: (degrees: number) => void;
@@ -227,7 +229,7 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
       const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: .85, metalness: .02, clippingPlanes }));
       mesh.position.y = 1;
       campusBounds.max.y = Math.max(campusBounds.max.y, height + mesh.position.y);
-      mesh.userData = { feature, baseColor: color };
+      mesh.userData = { feature, baseColor: color, region: campus.id === "cuhk" ? cuhkBuildingRegion(feature) : null };
       groups[feature.kind].add(mesh);
       buildings.push(mesh);
       outlines.push(new THREE.EdgesGeometry(geometry, 30).translate(0, mesh.position.y, 0));
@@ -369,11 +371,15 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
     for(const mesh of s.buildings) {
       const isSelected = mesh.userData.feature.id === selected?.id;
       const material=mesh.material as THREE.MeshStandardMaterial;
-      material.color.set(isSelected ? "#317cff" : scheduledBuildings?.has(mesh.userData.feature.id) ? "#087e70" : mesh.userData.baseColor);
+      const region = mesh.userData.region as CuhkRegion | null;
+      const baseColor = colorRegions && region
+        ? highlightedRegion && region !== highlightedRegion ? "#e1e6e4" : cuhkRegions[region].color
+        : mesh.userData.baseColor;
+      material.color.set(isSelected ? "#317cff" : scheduledBuildings?.has(mesh.userData.feature.id) ? "#087e70" : baseColor);
       material.emissive.set(isSelected ? "#092649" : "#000000");
     }
     s.invalidate();
-  }, [selected,campus,scheduledBuildings]);
+  }, [selected,campus,scheduledBuildings,colorRegions,highlightedRegion]);
   useEffect(() => {
     const s = state.current; if(!s)return;
     if (!selected) s.focus = undefined;

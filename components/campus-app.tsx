@@ -7,6 +7,7 @@ import { preload } from "react-dom";
 import { ArrowDownToLine, ArrowUpRight, Box, Building2, Check, ChevronDown, ChevronRight, Crosshair, Expand, FileBox, Info, Layers3, Leaf, LoaderCircle, Map, MapPin, Minus, MousePointer2, Move3D, Plus, RotateCcw, Search, SlidersHorizontal, TrainFront, Upload, Waves, X } from "lucide-react";
 import { cuhkCampusMap, isTransitPlace, placeAliases, projectPlace, railwayEntranceSource, searchPlaces, universityExits, universityStation, universityStationMap } from "@/lib/campus-places";
 import type { CampusPlace } from "@/lib/campus-places";
+import { cuhkBuildingRegion, cuhkRegions, type CuhkRegion } from "@/lib/cuhk-regions";
 import { partColors } from "@/lib/types";
 import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 import { buildWalkingGraph, distance, findWalkingRoute, formatEndpoint, parseEndpoint } from "@/lib/walking-route";
@@ -28,6 +29,7 @@ const initialCampusId = "hkstp";
 const campuses = [{id:"hkstp",short:"HKSTP",name:"Hong Kong Science Park",tag:"Science & innovation"},{id:"cuhk",short:"CUHK",name:"The Chinese University of Hong Kong",tag:"Education & research"}];
 const layerOptions = [{key:"building",name:"Buildings",icon:Building2,color:"#b7c7cd"},{key:"road",name:"Roads & pathways",icon:Map,color:"#c2c9c3"},{key:"park",name:"Green spaces",icon:Leaf,color:"#92b79d"},{key:"water",name:"Water bodies",icon:Waves,color:"#8abcc6"}] as const;
 const transitPlaces = [universityStation,...universityExits];
+const regionKeys = Object.keys(cuhkRegions) as CuhkRegion[];
 
 function normalizeBuildingName(name: string) {
   return name.normalize("NFKC").toLowerCase().replace(/['‘’ʼ.]/g,"").replace(/[\p{P}\s]+/gu," ").trim();
@@ -51,6 +53,7 @@ export default function CampusApp() {
   const [startKey,setStartKey]=useState<string|null>(null);
   const [destinationKey,setDestinationKey]=useState<string|null>(null);
   const [layers,setLayers]=useState<Layers>({building:true,road:true,park:true,water:true});
+  const [highlightedRegion,setHighlightedRegion]=useState<CuhkRegion|null>(null);
   const [view,setView]=useState<ViewMode>("perspective");
   const [comparePrint,setComparePrint]=useState(false);
   const [action,setAction]=useState<ViewerAction|null>(null);
@@ -223,6 +226,11 @@ export default function CampusApp() {
   const current=campuses.find(c=>c.id===campusId)!;
   const printMode=comparePrint&&tab==="explore";
   const showPrint=printMode&&campus&&!loading;
+  const showRegions=isCuhk&&tab==="explore"&&!printMode&&!modelFiles.length;
+  const highlightRegion=(region:CuhkRegion|null)=>{
+    setHighlightedRegion(current=>current===region?null:region);
+    setLayers(previous=>({...previous,building:true}));
+  };
   const searchLabel=isCuhk?"Find a place or code":"Find a building";
   return <div className="app-shell">
     <a className="skip-to-map" href="#map-view">Skip to map controls</a>
@@ -244,7 +252,7 @@ export default function CampusApp() {
       <div className={`main-workspace ${(planning&&tab==="explore")||showTactile||showTimetable?"planning-workspace":""}`}>
         <section id="campus-directory" className={`directory ${mobileDirectory?"mobile-open":""}`} aria-label="Campus directory">
           <div className="directory-heading"><span className="section-label">WORKSPACE</span><button className="icon-button mobile-close" onClick={()=>setMobileDirectory(false)} aria-label="Close directory"><X size={17}/></button></div>
-          <div className="campus-select"><span className="campus-icon"><Building2 size={21}/></span><div><label htmlFor="campus">Campus location</label><div className="select-wrap"><select id="campus" value={campusId} onChange={e=>{setCampusId(e.target.value);setSelectedId(null);clearRoute();}} aria-label="Campus location">{campuses.map(c=><option key={c.id} value={c.id}>{c.short} campus</option>)}</select><ChevronDown size={14}/></div></div></div>
+          <div className="campus-select"><span className="campus-icon"><Building2 size={21}/></span><div><label htmlFor="campus">Campus location</label><div className="select-wrap"><select id="campus" value={campusId} onChange={e=>{setCampusId(e.target.value);setSelectedId(null);setHighlightedRegion(null);clearRoute();}} aria-label="Campus location">{campuses.map(c=><option key={c.id} value={c.id}>{c.short} campus</option>)}</select><ChevronDown size={14}/></div></div></div>
           <div className="directory-tabs"><button className={tab==="explore"?"selected":""} aria-pressed={tab==="explore"} onClick={()=>{setTab("explore");setModelFiles([]);}}>Explore campus</button><button className={tab==="models"?"selected":""} aria-pressed={tab==="models"} onClick={()=>setTab("models")}>My models</button></div>
           {tab==="explore"?<>
             <div className="layer-heading"><h2>Map layers</h2><SlidersHorizontal size={15}/></div>
@@ -285,18 +293,25 @@ export default function CampusApp() {
             </div>
             <button ref={directoryToggle} className="icon-button mobile-directory-toggle" aria-label="Open campus directory" aria-controls="campus-directory" aria-expanded={mobileDirectory} onClick={()=>setMobileDirectory(true)}><Layers3 size={18}/></button>
           </div>
+          {showRegions&&<div className="college-regions" role="group" aria-label="CUHK building regions">
+            <strong>Building regions</strong>
+            <button type="button" aria-pressed={highlightedRegion===null} onClick={()=>highlightRegion(null)}>All regions</button>
+            {regionKeys.map(region=><button type="button" key={region} aria-pressed={highlightedRegion===region} onClick={()=>highlightRegion(region)}>
+              <i aria-hidden="true" style={{background:cuhkRegions[region].color}}/>{cuhkRegions[region].name}
+            </button>)}
+          </div>}
           <div className={`viewer ${dragging?"dragging":""} ${planning&&start&&destination&&tab==="explore"?"route-shown":""}`} ref={viewer} onDragOver={e=>{if(!e.dataTransfer.types.includes("Files"))return;e.preventDefault();setDragging(true);}} onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node|null))setDragging(false);}} onDrop={e=>{e.preventDefault();setDragging(false);chooseModels(e.dataTransfer.files);}}>
             {showPrint&&<PrintComparison campus={campus} layers={layers} selected={selected&&!isTransitPlace(selected)?selected:null}/>}
             <div className="campus-map-view" hidden={Boolean(showPrint)}>
               <div className="map-surface" ref={mapSurface}>
-                <CampusScene campus={loading?null:activeCampus} layers={layers} selected={planning?null:selected} scheduledBuildings={showTimetable?scheduledBuildings:undefined} showTransit={showTransit&&tab==="explore"} onSelect={select} onMapPoint={!showPrint&&planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFiles={modelFiles} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready} onModelInfo={setModelInfo} onHeadingChange={showNorthHeading}/>
+                <CampusScene campus={loading?null:activeCampus} layers={layers} selected={planning?null:selected} scheduledBuildings={showTimetable?scheduledBuildings:undefined} colorRegions={showRegions} highlightedRegion={highlightedRegion} showTransit={showTransit&&tab==="explore"} onSelect={select} onMapPoint={!showPrint&&planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFiles={modelFiles} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready} onModelInfo={setModelInfo} onHeadingChange={showNorthHeading}/>
                 {(loading||!sceneReady)&&!error&&<div className="loading-overlay" role="status"><LoaderCircle className="spin" size={28}/><strong>{modelFiles.length?"Opening your model":"Bringing campus into focus"}</strong><span>Preparing your 3D view…</span></div>}
                 {error&&<div className="error-banner" role="alert"><Info size={17}/><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError("")}><X size={16}/></button></div>}
                 <div className="map-title"><span className="map-kicker">{modelFiles.length?"LOCAL MODEL":"CAMPUS DIGITAL TWIN"}</span><h2 id="map-title">{modelName??current.name}</h2><p className="map-subtitle">{modelFiles.length?"Your geometry. A different perspective.":campus?.subtitle}</p><p className="touch-hint">{view==="top"?"Drag to pan · Pinch to zoom":"Drag to orbit · Pinch to zoom · Two fingers to pan"}</p></div>
                 <div className="compass" role="img" aria-label="North indicator" style={modelFiles.length?{visibility:"hidden"}:undefined}><span>N</span><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="15" fill="none" stroke="currentColor" strokeWidth="1.5"/><path ref={northNeedle} d="M17 6L22 25L17 21L12 25Z" fill="currentColor"/></svg></div>
                 <div className="map-controls"><button title="Zoom in" aria-label="Zoom in" onClick={()=>command("zoomIn")}><Plus size={19}/></button><button title="Zoom out" aria-label="Zoom out" onClick={()=>command("zoomOut")}><Minus size={19}/></button><span/><button title="Reset view" aria-label="Reset view" onClick={()=>{setView("perspective");command("reset");}}><RotateCcw size={17}/></button><button title="Fullscreen" aria-label="Toggle fullscreen" onClick={()=>{if(document.fullscreenElement)void document.exitFullscreen();else void viewer.current?.requestFullscreen().catch(()=>setError("Fullscreen is unavailable in this browser."));}}><Expand size={17}/></button></div>
                 <p className="scene-keyboard-help" id="scene-keyboard-help">Arrow keys pan. {view==="perspective"&&"Shift + arrow keys orbit. "}Tab to the zoom and reset controls.</p>
-                <div className="map-bottom">{modelFiles.length?(modelFiles.length>1?<div className="map-legend">{modelFiles.map((file,index)=><span key={file.name+file.lastModified}><i style={{background:partColors[index%partColors.length]}}/>{file.name}</span>)}</div>:<span/>):<div className="map-legend"><span><i style={{background:"#b7c7cd"}}/>Built environment</span><span><i style={{background:"#92b79d"}}/>Landscape</span><span><i style={{background:"#8abcc6"}}/>Water</span></div>}<div className="interaction-hint"><MousePointer2 size={13}/>Drag to {view==="top"?"pan":"orbit"}<span>·</span>Scroll to zoom{!modelFiles.length&&<><span>·</span>Click to inspect</>}</div></div>
+                <div className="map-bottom">{modelFiles.length?(modelFiles.length>1?<div className="map-legend">{modelFiles.map((file,index)=><span key={file.name+file.lastModified}><i style={{background:partColors[index%partColors.length]}}/>{file.name}</span>)}</div>:<span/>):<div className="map-legend">{!showRegions&&<span><i style={{background:"#b7c7cd"}}/>Built environment</span>}<span><i style={{background:"#92b79d"}}/>Landscape</span><span><i style={{background:"#8abcc6"}}/>Water</span></div>}<div className="interaction-hint"><MousePointer2 size={13}/>Drag to {view==="top"?"pan":"orbit"}<span>·</span>Scroll to zoom{!modelFiles.length&&<><span>·</span>Click to inspect</>}</div></div>
                 <a className="attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
               </div>
               {selected&&!planning&&!modelFiles.length&&<article className={isTransitPlace(selected)?"feature-card transit-card":"feature-card"}>
@@ -311,6 +326,7 @@ export default function CampusApp() {
                 <a className="osm-link" href={universityStationMap} target="_blank" rel="noreferrer">MTR station map<ArrowUpRight size={12}/></a>
                 {selected.kind==="exit"&&<a className="osm-link" href={railwayEntranceSource} target="_blank" rel="noreferrer">Exit data: Lands Department via CSDI<ArrowUpRight size={12}/></a>}
               </>:<>
+                {showRegions&&selected.kind==="building"&&<p className="building-region-label">{cuhkRegions[cuhkBuildingRegion(selected)].name}</p>}
                 <div className="feature-facts"><div><span>Height {selected.heightEstimated?"(estimated)":"(mapped)"}</span><strong>{selected.height.toFixed(1)}<small> m</small></strong></div><div><span>Footprint</span><strong>{selected.area?.toLocaleString()}<small> m²</small></strong></div></div>
                 <p className="height-note">{selected.heightEstimated?"Height inferred from levels, or a 14 m default. Not survey-grade.":"Height supplied by OpenStreetMap contributors."}</p>
                 <button className="primary-button" onClick={()=>command("focus")}><Crosshair size={15}/>Focus building</button>
