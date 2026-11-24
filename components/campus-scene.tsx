@@ -24,16 +24,16 @@ function disposeObject(object: THREE.Object3D) {
   });
 }
 
-export default function CampusScene({ campus, layers, selected, onSelect, view, action, modelFile, onError, onReady }: {
+export default function CampusScene({ campus, layers, selected, onSelect, view, action, modelFile, onError, onModelError, onReady }: {
   campus: Campus; layers: Layers; selected: string | null; onSelect: (f: Feature | null) => void;
   view: ViewMode; action: ViewerAction | null; modelFile: File | null;
-  onError: (error: string) => void; onReady: () => void;
+  onError: (error: string) => void; onModelError: () => void; onReady: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const state = useRef<SceneState | null>(null);
   const lastAction = useRef<ViewerAction | null>(null);
-  const callbacks = useRef({ onSelect, onError, onReady });
-  useEffect(() => { callbacks.current = { onSelect, onError, onReady }; }, [onSelect, onError, onReady]);
+  const callbacks = useRef({ onSelect, onError, onModelError, onReady });
+  useEffect(() => { callbacks.current = { onSelect, onError, onModelError, onReady }; }, [onSelect, onError, onModelError, onReady]);
 
   useEffect(() => {
     if (!container.current) return;
@@ -47,7 +47,6 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.3;
     host.appendChild(renderer.domElement);
-    renderer.domElement.setAttribute("aria-label", "Interactive 3D campus map. Drag to orbit, scroll to zoom, click buildings to inspect. Use the adjacent buttons for camera controls.");
     const scene = new THREE.Scene();
     const span = Math.max(campus.width, campus.depth);
     const camera = new THREE.PerspectiveCamera(38, 1, 1, span * 14);
@@ -147,6 +146,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
     s.controls.enableRotate=view!=="top";
     s.controls.mouseButtons.LEFT=view==="top"?THREE.MOUSE.PAN:THREE.MOUSE.ROTATE;
     s.controls.touches.ONE=view==="top"?THREE.TOUCH.PAN:THREE.TOUCH.ROTATE;
+    s.renderer.domElement.setAttribute("aria-label", `Interactive 3D campus map. Drag to ${view==="top"?"pan":"orbit"}, scroll to zoom, click buildings to inspect. Use the adjacent buttons for camera controls.`);
     s.camera.position.copy(s.controls.target).add(view==="top" ? new THREE.Vector3(0,distance,.01) : new THREE.Vector3(.5,.72,.65).normalize().multiplyScalar(distance));
     s.controls.update();
   },[view,campus]);
@@ -192,7 +192,7 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
         const center=box.getCenter(new THREE.Vector3());
         object.position.sub(new THREE.Vector3(center.x,box.min.y,center.z));
         s.model.add(object);s.controls.target.set(0,s.span*.12,0);s.camera.position.copy(s.initial);callbacks.current.onReady();
-      }catch(error){if(!cancelled)callbacks.current.onError(error instanceof Error?error.message:"Could not load this model.");}
+      }catch{if(!cancelled){callbacks.current.onModelError();callbacks.current.onError("Could not open this model. Choose a valid STL or self-contained GLB file.");}}
     };
     void load();
     return ()=>{cancelled=true;disposeObject(s.model);s.model.clear();};
