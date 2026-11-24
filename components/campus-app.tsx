@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { preload } from "react-dom";
 import { ArrowDownToLine, ArrowUpRight, Box, Building2, Check, ChevronDown, ChevronRight, Crosshair, Expand, FileBox, Info, Layers3, Leaf, LoaderCircle, Map, MapPin, Minus, MousePointer2, Move3D, Plus, RotateCcw, Search, SlidersHorizontal, TrainFront, Upload, Waves, X } from "lucide-react";
-import { cuhkCampusMap, isTransitPlace, placeAliases, railwayEntranceSource, searchPlaces, universityExits, universityStation, universityStationMap } from "@/lib/campus-places";
+import { cuhkCampusMap, isTransitPlace, placeAliases, projectPlace, railwayEntranceSource, searchPlaces, universityExits, universityStation, universityStationMap } from "@/lib/campus-places";
 import type { CampusPlace } from "@/lib/campus-places";
 import { partColors } from "@/lib/types";
 import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
@@ -106,7 +106,7 @@ export default function CampusApp() {
   const route=useMemo(()=>graph&&start&&destination?findWalkingRoute(graph,activeCampus?.walkDetails,start.point,destination.point):null,[graph,activeCampus,start,destination]);
   const area=activeCampus&&tactileArea(activeCampus.center,planning
     ? [...(start?[start.point]:[]), ...(destination?[destination.point]:[]), ...(route?.points??[])]
-    : selected&&!isTransitPlace(selected)?selected.points:[]);
+    : selected?(isTransitPlace(selected)?[projectPlace(selected,activeCampus.center)]:selected.points):[]);
   const endpointLabel=(endpoint:typeof start)=>{
     if (!endpoint) return null;
     const feature = activeCampus?.features.find(f => f.id === endpoint.featureId);
