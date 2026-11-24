@@ -13,6 +13,7 @@
 @media(min-width:651px) and (max-width:950px) and (min-height:501px){
   .main-workspace:not(.planning-workspace):has(.college-regions){height:auto}
   .main-workspace:not(.planning-workspace):has(.college-regions) .directory{contain:size}
+  .college-regions ~ .viewer .feature-card:not(.transit-card){--details-top:115px;top:var(--details-top);max-height:calc(100% - var(--details-top) - 12px);overflow-y:auto;overscroll-behavior-y:contain}
 }
 .route-planner{padding:10px 16px;background:#f2f7f6;border-bottom:1px solid var(--border);font-size:12px}
 .route-planner p{margin:6px 0}
