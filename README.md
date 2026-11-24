@@ -29,6 +29,7 @@ No API keys, database, backend service or pre-commit hooks are required.
 - Three.js orbit, pan, zoom, focus, reset, top-down view and layer visibility.
 - Local STL and self-contained GLB viewing, with a 50 MB file limit.
 - GeoJSON export and responsive building directory.
+- Prepare a tactile map for a selected place or walking plan: copy its bounds and a local Touch Mapper command, or download area GeoJSON with any planned endpoints and mapped path.
 
 ## Data provenance and limitations
 
@@ -41,7 +42,7 @@ The compact snapshots in `public/data` were retrieved from the OpenStreetMap map
 
 The bounds include surrounding buildings. The snapshot has no terrain or slope model. Building heights use mapped height values, or levels × 3.5 m, or a 14 m default; inferred values are labeled. Complex stitched multipolygon outer rings and polygon holes are not reconstructed. The walking planner uses OSM ways that are plausibly walkable and shares a graph junction only where the ways share an OSM node. It does not verify endpoint connections, crossings, current access, or accessibility. This is not a survey-grade, structural or navigation system.
 
-Routing unit tests (Node.js 22.18+): `node --test scripts/*.test.mjs`.
+Routing and tactile handoff unit tests (Node.js 22.18+): `node --test scripts/*.test.mjs`.
 
 To refresh snapshots, download the XML extracts, then run:
 
