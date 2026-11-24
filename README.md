@@ -5,6 +5,8 @@ A Next.js technology showcase for meshPotato, with a Three.js geographic digital
 - `/` is the static company showcase. Project imagery is served locally, with attribution for OpenStreetMap-derived previews.
 - `/explore` opens Campus Atlas. Existing root links that encode a campus, selected place, or walking plan continue to open the viewer.
 
+The Sustainability section uses the [United Nations’ goal icons](https://sdgs.un.org/goals) for informational purposes under the [UN icon usage guidelines](https://www.un.org/sustainabledevelopment/news/communications-material/).
+
 ## Run
 
 Requires Node.js 20.9+ and npm. On the Devin VM, first run `. /home/ubuntu/.nvm/nvm.sh`.

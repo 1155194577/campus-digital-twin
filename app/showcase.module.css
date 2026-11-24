@@ -80,11 +80,12 @@
 .projectCopy .textLink { margin-top: auto; padding-top: 16px; }
 
 .sustainability { background: var(--dark); color: #f9f8ef; }
-.sustainability .kicker, .goal .goalNumber { color: var(--accent); }
+.sustainability .kicker { color: var(--accent); }
 .sustainability .sectionHeading > p, .goal p { color: #e0e6d7; }
+.sustainability .sectionHeading a, .goalNote a { text-decoration: underline; text-underline-offset: .15em; }
 .sustainability a:focus-visible { outline-color: var(--accent); }
 .goal { padding: 21px; border: 1px solid #54695a; border-radius: 8px; background: #243b30; }
-.goal .goalNumber { margin: 0 0 10px; font: 700 12px/1.4 var(--mono); letter-spacing: .1em; }
+.goalIcon { display: block; margin-bottom: 14px; }
 .goal h3 { font-size: clamp(18px, 2vw, 24px); }
 .goal h3 a:hover { text-decoration: underline; }
 .goal h3 svg { display: inline; vertical-align: -.12em; }

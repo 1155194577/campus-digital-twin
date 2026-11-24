@@ -62,19 +62,19 @@ const projects = [
 
 const goals = [
   {
-    number: "09",
+    number: 9,
     title: "Industry, Innovation and Infrastructure",
     description: "Research better ways to model, optimize and fabricate parts.",
     href: "https://sdgs.un.org/goals/goal9",
   },
   {
-    number: "11",
+    number: 11,
     title: "Sustainable Cities and Communities",
     description: "Explore more inclusive ways to understand places, including tactile maps.",
     href: "https://sdgs.un.org/goals/goal11",
   },
   {
-    number: "12",
+    number: 12,
     title: "Responsible Consumption and Production",
     description: "Investigate material choices and designs that use resources more efficiently.",
     href: "https://sdgs.un.org/goals/goal12",
@@ -186,18 +186,18 @@ export default function Home() {
           <div className={`${styles.container} ${styles.section}`}>
             <div className={styles.sectionHeading}>
               <div><p className={styles.kicker}>03 / Sustainability</p><h2 id="sustainability-title">Engineering for sustainable development</h2></div>
-              <p>We use the United Nations’ Sustainable Development Goals to guide our work toward responsible innovation, inclusive places and more resource-efficient fabrication.</p>
+              <p>We use the <a href="https://www.un.org/sustainabledevelopment">United Nations’ Sustainable Development Goals</a> to guide our work toward responsible innovation, inclusive places and more resource-efficient fabrication.</p>
             </div>
             <div className={styles.goalGrid}>
               {goals.map(goal => (
                 <article className={styles.goal} key={goal.number}>
-                  <p className={styles.goalNumber}>GOAL {goal.number}</p>
+                  <Image className={styles.goalIcon} src={`/showcase/sdg-${goal.number}.jpg`} alt={`Goal ${goal.number}`} width={112} height={112} unoptimized />
                   <h3><a href={goal.href}>{goal.title} <ArrowUpRight size={16} aria-hidden="true" /></a></h3>
                   <p>{goal.description}</p>
                 </article>
               ))}
             </div>
-            <p className={styles.goalNote}>These goals guide our priorities; they do not imply UN affiliation or endorsement.</p>
+            <p className={styles.goalNote}>The content of this publication has not been approved by the United Nations and does not reflect the views of the United Nations or its officials or Member States. <a href="https://www.un.org/sustainabledevelopment/wp-content/uploads/2023/09/E_SDG_Guidelines_Sep20238.pdf">UN icon usage guidelines (PDF)</a>.</p>
           </div>
         </section>
       </main>
