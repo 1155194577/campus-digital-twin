@@ -48,12 +48,18 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.3;
     host.appendChild(renderer.domElement);
+    renderer.domElement.tabIndex = 0;
+    renderer.domElement.setAttribute("role", "group");
+    renderer.domElement.setAttribute("aria-label", "Interactive 3D view");
+    renderer.domElement.setAttribute("aria-describedby", "scene-keyboard-help");
     const scene = new THREE.Scene();
     const span = Math.max(campus.width, campus.depth);
     const camera = new THREE.PerspectiveCamera(38, 1, 1, span * 14);
     const initial = new THREE.Vector3(span * .58, span * .9, span * .82);
     camera.position.copy(initial);
     const controls = new OrbitControls(camera, renderer.domElement);
+    controls.listenToKeyEvents(renderer.domElement);
+    controls.keyRotateSpeed = 12;
     controls.enableDamping = true; controls.dampingFactor = .08;
     controls.maxPolarAngle = Math.PI / 2.15;
     controls.minDistance = 40; controls.maxDistance = span * 3.2;
@@ -201,7 +207,6 @@ export default function CampusScene({ campus, layers, selected, onSelect, view, 
     s.controls.enableRotate=view!=="top";
     s.controls.mouseButtons.LEFT=view==="top"?THREE.MOUSE.PAN:THREE.MOUSE.ROTATE;
     s.controls.touches.ONE=view==="top"?THREE.TOUCH.PAN:THREE.TOUCH.ROTATE;
-    s.renderer.domElement.setAttribute("aria-label", `Interactive 3D campus map. Drag to ${view==="top"?"pan":"orbit"}, scroll to zoom, click buildings to inspect. Use the adjacent buttons for camera controls.`);
     s.camera.position.copy(s.controls.target).add(view==="top" ? new THREE.Vector3(0,distance,.01) : new THREE.Vector3(.5,.72,.65).normalize().multiplyScalar(distance));
     s.controls.update();
     s.invalidate();
