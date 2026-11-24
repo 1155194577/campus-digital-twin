@@ -22,7 +22,7 @@ type SceneState = {
   setActive: (active: boolean) => void;
   view: ViewMode; perspectivePose?: CameraPose; topFrame?: CameraPose; campusBounds: THREE.Box3; modelBounds?: THREE.Box3;
   topSelectionTarget?: THREE.Vector3;
-  updateMarkers?: () => void;
+  updateTransitMarker?: () => void;
 };
 
 function getCameraPose(s: SceneState): CameraPose {
@@ -125,14 +125,13 @@ export default function CampusScene({ campus, layers, selected, showTransit, onS
   onError: (error: string) => void; onModelError: () => void; onReady: () => void; onModelInfo: (info: ModelInfo | null) => void; onHeadingChange: (degrees: number) => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
-  const stationMarker = useRef<HTMLButtonElement>(null);
-  const exitMarker = useRef<HTMLButtonElement>(null);
+  const transitMarker = useRef<HTMLButtonElement>(null);
   const state = useRef<SceneState | null>(null);
   const lastAction = useRef<ViewerAction | null>(null);
   const callbacks = useRef({ onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo, onHeadingChange });
   const upAxisRef = useRef(upAxis);
-  const station = showTransit && campus.id === "cuhk" && !modelFiles.length ? universityStation : null;
-  const exit = station && selected?.kind === "exit" ? selected : null;
+  const showTransitMarker = showTransit && campus.id === "cuhk" && !modelFiles.length;
+  const marker = showTransitMarker ? (selected?.kind === "exit" ? selected : universityStation) : null;
   useEffect(() => { callbacks.current = { onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo, onHeadingChange }; }, [onSelect, onMapPoint, onError, onModelError, onReady, onModelInfo, onHeadingChange]);
 
   useEffect(() => {
@@ -283,7 +282,7 @@ export default function CampusScene({ campus, layers, selected, showTransit, onS
         }
         renderer.render(scene,camera);
         updateNorthHeading();
-        sceneState.updateMarkers?.();
+        sceneState.updateTransitMarker?.();
         if (!ready) { ready = true; callbacks.current.onReady(); }
         dirty = false;
       }
@@ -349,26 +348,21 @@ export default function CampusScene({ campus, layers, selected, showTransit, onS
   }, [layers, campus, modelFiles]);
   useEffect(() => {
     const s = state.current;
-    if (!s || !station) return;
-    const markers = [
-      { node: stationMarker.current, point: transitPosition(station, campus) },
-      ...(exit ? [{ node: exitMarker.current, point: transitPosition(exit, campus) }] : []),
-    ];
+    const node = transitMarker.current;
+    if (!s || !node || !marker) return;
+    const point = transitPosition(marker, campus);
     const screen = new THREE.Vector3();
-    s.updateMarkers = () => {
-      for (const { node, point } of markers) {
-        if (!node) continue;
-        screen.copy(point).project(s.camera);
-        const visible = screen.z >= -1 && screen.z <= 1 && Math.abs(screen.x) < .94 && Math.abs(screen.y) < .92;
-        node.hidden = !visible;
-        if (!visible) continue;
-        node.style.left = `${((screen.x + 1) * 50).toFixed(2)}%`;
-        node.style.top = `${((1 - screen.y) * 50).toFixed(2)}%`;
-      }
+    s.updateTransitMarker = () => {
+      screen.copy(point).project(s.camera);
+      const visible = screen.z >= -1 && screen.z <= 1 && Math.abs(screen.x) < .94 && Math.abs(screen.y) < .92;
+      node.hidden = !visible;
+      if (!visible) return;
+      node.style.left = `${((screen.x + 1) * 50).toFixed(2)}%`;
+      node.style.top = `${((1 - screen.y) * 50).toFixed(2)}%`;
     };
     s.invalidate();
-    return () => { s.updateMarkers = undefined; };
-  }, [campus, station, exit]);
+    return () => { s.updateTransitMarker = undefined; };
+  }, [campus, marker]);
   useEffect(() => {
     const s = state.current; if(!s)return;
     let selectedMesh: THREE.Mesh | undefined;
@@ -524,7 +518,6 @@ export default function CampusScene({ campus, layers, selected, showTransit, onS
   useEffect(()=>{ upAxisRef.current=upAxis; const s=state.current; if(s?.model.children.length) callbacks.current.onModelInfo(fitModel(s,upAxis)); },[upAxis]);
   return <>
     <div className="scene-canvas" ref={container}/>
-    {station&&<button ref={stationMarker} hidden className="map-place-marker" aria-pressed={selected?.id===station.id} onClick={()=>onSelect(station)}><TrainFront size={12}/>{station.name}</button>}
-    {exit&&<button ref={exitMarker} hidden className="map-place-marker exit-marker" aria-pressed="true" onClick={()=>onSelect(exit)}><TrainFront size={12}/>Exit {exit.exit}</button>}
+    {marker&&<button key={marker.id} ref={transitMarker} hidden className="map-place-marker" aria-pressed={selected?.id===marker.id} onClick={()=>onSelect(marker)}><TrainFront size={12}/>{marker.kind==="exit"?`Exit ${marker.exit}`:marker.name}</button>}
   </>;
 }
