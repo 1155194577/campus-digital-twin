@@ -43,10 +43,14 @@ export default function CampusApp() {
   const [action,setAction]=useState<ViewerAction|null>(null);
   const [tab,setTab]=useState<"explore"|"models">("explore");
   const [modelFile,setModelFile]=useState<File|null>(null);
-  const [info,setInfo]=useState(false);
   const [mobileDirectory,setMobileDirectory]=useState(false);
   const upload=useRef<HTMLInputElement>(null);
   const viewer=useRef<HTMLDivElement>(null);
+  const directoryToggle=useRef<HTMLButtonElement>(null);
+  const aboutDialog=useRef<HTMLDialogElement>(null);
+  const search=useRef<HTMLInputElement>(null);
+  const detailsHeading=useRef<HTMLHeadingElement>(null);
+  const detailsTrigger=useRef<HTMLButtonElement|null>(null);
   useEffect(()=>{
     const params = new URLSearchParams(window.location.search);
     const requestedCampus = campuses.find(item => item.id === params.get("campus"));
@@ -116,6 +120,7 @@ export default function CampusApp() {
   },[choosing,destination,start]);
   const onMapPoint=useCallback((point:Point)=>putEndpoint(formatEndpoint({point})!),[putEndpoint]);
   const select=useCallback((feature:Feature|null)=>{
+    detailsTrigger.current=null;
     if (planning && tab === "explore" && feature) putEndpoint(feature.id);
     else setSelectedId(feature?.id??null);
     setMobileDirectory(false);
@@ -129,6 +134,17 @@ export default function CampusApp() {
     }
     setPlanning(!planning);
   };
+  const showInfo=()=>aboutDialog.current?.showModal();
+  const closeInfo=()=>aboutDialog.current?.close();
+  const closeDetails=()=>{
+    setSelectedId(null);
+    const trigger=detailsTrigger.current;
+    if (trigger) (trigger.getClientRects().length ? trigger : directoryToggle.current)?.focus();
+    detailsTrigger.current=null;
+  };
+  useEffect(()=>{
+    if (selected && detailsTrigger.current) detailsHeading.current?.focus();
+  },[selected]);
   const command=(type:ViewerAction["type"])=>{
     if(type==="focus")setView("perspective");
     setAction({type,at:Date.now()});
@@ -146,62 +162,67 @@ export default function CampusApp() {
   };
   const current=campuses.find(c=>c.id===campusId)!;
   return <div className="app-shell">
+    <a className="skip-to-map" href="#map-view">Skip to map controls</a>
     <aside className="rail" aria-label="Main navigation">
       <Link className="brand-mark" href="/" aria-label="Campus Atlas home"><Layers3 size={25}/></Link>
       <div className="rail-divider"/>
-      <button className={tab==="explore"?"rail-button active":"rail-button"} title="Campus explorer" aria-label="Campus explorer" onClick={()=>{setTab("explore");setModelFile(null);}}><Map size={21}/></button>
-      <button className={tab==="models"?"rail-button active":"rail-button"} title="3D model viewer" aria-label="3D model viewer" onClick={()=>setTab("models")}><Box size={21}/></button>
-      <button className="rail-button rail-bottom" title="About this twin" aria-label="About this twin" onClick={()=>setInfo(true)}><Info size={20}/></button>
+      <button className={tab==="explore"?"rail-button active":"rail-button"} title="Campus explorer" aria-label="Campus explorer" aria-pressed={tab==="explore"} onClick={()=>{setTab("explore");setModelFile(null);}}><Map size={21}/></button>
+      <button className={tab==="models"?"rail-button active":"rail-button"} title="3D model viewer" aria-label="3D model viewer" aria-pressed={tab==="models"} onClick={()=>setTab("models")}><Box size={21}/></button>
+      <button className="rail-button rail-bottom" title="About this twin" aria-label="About this twin" onClick={showInfo}><Info size={20}/></button>
       <div className="avatar">CA</div>
     </aside>
     <div className="workspace">
       <header className="topbar">
         <div className="identity"><strong>Campus Atlas<span className="beta">BETA</span></strong><span className="topbar-divider"/><span className="product-label">Digital twin workspace</span></div>
-        <div className="topbar-actions"><span className="snapshot-pill"><span/>Geographic snapshot</span><button className="icon-button" aria-label="About data sources" onClick={()=>setInfo(true)}><Info size={18}/></button><a className="github-link" href="https://github.com/1155194577/py-touch-mapper-hk" target="_blank" rel="noreferrer">Project sources<ArrowUpRight size={14}/></a></div>
+        <div className="topbar-actions"><span className="snapshot-pill"><span/>Geographic snapshot</span><button className="icon-button" aria-label="About data sources" onClick={showInfo}><Info size={18}/></button><a className="github-link" href="https://github.com/1155194577/py-touch-mapper-hk" target="_blank" rel="noreferrer">Project sources<ArrowUpRight size={14}/></a></div>
       </header>
+      <main>
       <div className="page-heading"><div><div className="eyebrow">YOUR CAMPUS, IN CONTEXT</div><h1>{tab==="explore"?"A new perspective on campus.":"Bring your models into view."}</h1><p>{tab==="explore"?"Explore the places, buildings and spaces that connect us.":"Inspect a scan or printable model, right in your browser."}</p></div><button className="secondary-button export-button" onClick={exportData} disabled={!campus||loading}><ArrowDownToLine size={16}/>Export map data</button></div>
-      <main className={`main-workspace ${planning&&tab==="explore"?"planning-workspace":""}`}>
+      <div className={`main-workspace ${planning&&tab==="explore"?"planning-workspace":""}`}>
         <section className={`directory ${mobileDirectory?"mobile-open":""}`} aria-label="Campus directory">
           <div className="directory-heading"><span className="section-label">WORKSPACE</span><button className="icon-button mobile-close" onClick={()=>setMobileDirectory(false)} aria-label="Close directory"><X size={17}/></button></div>
           <div className="campus-select"><span className="campus-icon"><Building2 size={21}/></span><div><label htmlFor="campus">Campus location</label><div className="select-wrap"><select id="campus" value={campusId} onChange={e=>{setCampusId(e.target.value);setSelectedId(null);clearRoute();}} aria-label="Campus location">{campuses.map(c=><option key={c.id} value={c.id}>{c.short} campus</option>)}</select><ChevronDown size={14}/></div></div></div>
-          <div className="directory-tabs"><button className={tab==="explore"?"selected":""} onClick={()=>{setTab("explore");setModelFile(null);}}>Explore campus</button><button className={tab==="models"?"selected":""} onClick={()=>setTab("models")}>My models</button></div>
+          <div className="directory-tabs"><button className={tab==="explore"?"selected":""} aria-pressed={tab==="explore"} onClick={()=>{setTab("explore");setModelFile(null);}}>Explore campus</button><button className={tab==="models"?"selected":""} aria-pressed={tab==="models"} onClick={()=>setTab("models")}>My models</button></div>
           {tab==="explore"?<>
             <div className="layer-heading"><h2>Map layers</h2><SlidersHorizontal size={15}/></div>
             <div className="layers">{layerOptions.map(({key,name,icon:Icon,color})=><label className="layer-row" key={key}><span className="layer-symbol" style={{color}}><Icon size={17}/></span><span>{name}</span><input type="checkbox" checked={layers[key]} onChange={e=>setLayers({...layers,[key]:e.target.checked})}/><span className="custom-check">{layers[key]&&<Check size={12}/>}</span></label>)}</div>
             <div className="directory-rule"/>
             <div className="layer-heading"><h2>Building directory</h2><span className="count">{named.length}</span></div>
-            <label className="search-field"><Search size={15}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Find a building…" aria-label="Find a building"/>{query&&<button onClick={()=>setQuery("")} aria-label="Clear search"><X size={13}/></button>}</label>
-            <div className="building-list" aria-live="polite">{loading?<div className="list-message">Loading campus…</div>:filtered.length?filtered.map(f=>{
+            <div className="search-field"><Search size={15}/><input ref={search} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Find a building…" aria-label="Find a building"/>{query&&<button onClick={()=>{setQuery("");search.current?.focus();}} aria-label="Clear search"><X size={13}/></button>}</div>
+            <div className="visually-hidden" role="status">{loading?"Loading campus":`${filtered.length} buildings found`}</div>
+            <div className="building-list">{loading?<div className="list-message">Loading campus…</div>:filtered.length?filtered.map(f=>{
               const footprints=footprintsByName.get(f.name)??[];
               const sameArea=footprints.filter(other=>other.area===f.area);
               const footprintLabel=footprints.length>1&&(f.area!=null&&sameArea.length===1?`${f.area.toLocaleString()} m²`:`Footprint ${footprints.indexOf(f)+1}`);
-              return <button className={`building-row ${selected?.id===f.id?"selected":""}`} key={f.id} onClick={()=>{setLayers(l=>({...l,building:true}));select(f);}}><span className="building-icon"><Building2 size={16}/></span><span><strong>{f.name}</strong><small>{f.category==="yes"?"Campus building":f.category.replaceAll("_"," ")}{footprintLabel&&<span style={{textTransform:"none"}}> · {footprintLabel}</span>}</small></span><ChevronRight size={13}/></button>;
+              return <button className={`building-row ${selected?.id===f.id?"selected":""}`} key={f.id} aria-expanded={planning?undefined:selected?.id===f.id} onClick={e=>{setLayers(l=>({...l,building:true}));select(f);if(!planning&&e.detail===0){detailsTrigger.current=e.currentTarget;if(selected?.id===f.id)detailsHeading.current?.focus();}}}><span className="building-icon"><Building2 size={16}/></span><span><strong>{f.name}</strong><small>{f.category==="yes"?"Campus building":f.category.replaceAll("_"," ")}{footprintLabel&&<span style={{textTransform:"none"}}> · {footprintLabel}</span>}</small></span><ChevronRight size={13}/></button>;
             }):<div className="list-message">No buildings found. Try another name.</div>}</div>
           </>:<div className="model-panel"><div className="model-art"><FileBox size={40} strokeWidth={1.2}/></div><h2>Your models, a closer look.</h2><p>Open a scanned object or printable model to orbit, zoom and inspect it in 3D.</p><button className="primary-button" onClick={()=>upload.current?.click()}><Upload size={15}/>Open 3D model</button><small>STL or self-contained GLB · up to 50 MB</small>{modelFile&&<div className="loaded-model"><FileBox size={17}/><span>{modelFile.name}<small>{(modelFile.size/1024/1024).toFixed(2)} MB · Local file</small></span><button className="icon-button" onClick={()=>{setModelFile(null);setError("");}} aria-label="Remove model"><X size={15}/></button></div>}<div className="privacy-note"><Check size={14}/>Your model stays on this device.</div></div>}
           <button className="secondary-button mobile-export" onClick={exportData} disabled={!campus||loading}><ArrowDownToLine size={15}/>Export map data</button>
-          <div className="directory-footer"><span className="small-dot"/>Built on open geographic data<button onClick={()=>setInfo(true)} aria-label="Read map attribution"><ArrowUpRight size={13}/></button></div>
+          <div className="directory-footer"><span className="small-dot"/>Built on open geographic data<button onClick={showInfo} aria-label="Read map attribution"><ArrowUpRight size={13}/></button></div>
         </section>
-        <section className="map-section">
+        <section className="map-section" id="map-view" aria-labelledby="map-title" tabIndex={-1}>
           {tab==="explore"&&<div className="route-toolbar"><button className="secondary-button" type="button" aria-expanded={planning} onClick={togglePlanner}>{planning?"Close route planner":"Plan route"}</button></div>}
           {tab==="explore"&&planning&&<RoutePlanner start={endpointLabel(start)} destination={endpointLabel(destination)} choosing={choosing} onChoose={setChoosing} onClear={clearRoute} estimate={start&&destination?distance(start.point,destination.point):null} route={route}/>}
-          <div className="map-toolbar"><div className="map-breadcrumb"><span className="toolbar-icon"><MapPin size={16}/></span><strong>{modelFile?modelFile.name:current.short}</strong><ChevronRight size={13}/><span>{modelFile?"Model viewer":"Campus overview"}</span></div><div className="view-switch" aria-label="Map view"><button className={view==="perspective"?"selected":""} onClick={()=>setView("perspective")}><Box size={14}/>3D</button><button className={view==="top"?"selected":""} onClick={()=>setView("top")}><Map size={14}/>Top</button></div><button className="icon-button mobile-directory-toggle" aria-label="Open campus directory" onClick={()=>setMobileDirectory(true)}><Layers3 size={18}/></button></div>
+          <div className="map-toolbar"><div className="map-breadcrumb"><span className="toolbar-icon"><MapPin size={16}/></span><strong>{modelFile?modelFile.name:current.short}</strong><ChevronRight size={13}/><span>{modelFile?"Model viewer":"Campus overview"}</span></div><div className="view-switch" role="group" aria-label="Map view"><button className={view==="perspective"?"selected":""} aria-pressed={view==="perspective"} onClick={()=>setView("perspective")}><Box size={14}/>3D</button><button className={view==="top"?"selected":""} aria-pressed={view==="top"} onClick={()=>setView("top")}><Map size={14}/>Top</button></div><button ref={directoryToggle} className="icon-button mobile-directory-toggle" aria-label="Open campus directory" onClick={()=>setMobileDirectory(true)}><Layers3 size={18}/></button></div>
           <div className={`viewer ${planning&&start&&destination&&tab==="explore"?"route-shown":""}`} ref={viewer}>
             <CampusScene campus={loading?null:activeCampus} layers={layers} selected={planning?null:selected?.id??null} onSelect={select} onMapPoint={planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFile={modelFile} onError={showError} onModelError={clearFailedModel} onReady={ready}/>
-            {(loading||!sceneReady)&&!error&&<div className="loading-overlay"><LoaderCircle className="spin" size={28}/><strong>Bringing campus into focus</strong><span>Preparing your 3D view…</span></div>}
+            {(loading||!sceneReady)&&!error&&<div className="loading-overlay" role="status"><LoaderCircle className="spin" size={28}/><strong>Bringing campus into focus</strong><span>Preparing your 3D view…</span></div>}
             {error&&<div className="error-banner" role="alert"><Info size={17}/><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError("")}><X size={16}/></button></div>}
-            <div className="map-title"><span className="map-kicker">{modelFile?"LOCAL MODEL":"CAMPUS DIGITAL TWIN"}</span><h2>{modelFile?modelFile.name:current.name}</h2><p>{modelFile?"Your geometry. A different perspective.":campus?.subtitle}</p></div>
+            <div className="map-title"><span className="map-kicker">{modelFile?"LOCAL MODEL":"CAMPUS DIGITAL TWIN"}</span><h2 id="map-title">{modelFile?modelFile.name:current.name}</h2><p>{modelFile?"Your geometry. A different perspective.":campus?.subtitle}</p></div>
             <div className="compass" aria-label="North indicator"><span>N</span><Compass size={34} strokeWidth={1.15}/></div>
             <div className="map-controls"><button title="Zoom in" aria-label="Zoom in" onClick={()=>command("zoomIn")}><Plus size={19}/></button><button title="Zoom out" aria-label="Zoom out" onClick={()=>command("zoomOut")}><Minus size={19}/></button><span/><button title="Reset view" aria-label="Reset view" onClick={()=>{setView("perspective");command("reset");}}><RotateCcw size={17}/></button><button title="Fullscreen" aria-label="Toggle fullscreen" onClick={()=>{if(document.fullscreenElement)void document.exitFullscreen();else void viewer.current?.requestFullscreen().catch(()=>setError("Fullscreen is unavailable in this browser."));}}><Expand size={17}/></button></div>
-            {selected&&!planning&&!modelFile&&<article className="feature-card"><div className="feature-card-top"><span><Building2 size={15}/>BUILDING DETAILS</span><button className="icon-button" aria-label="Close building details" onClick={()=>setSelectedId(null)}><X size={16}/></button></div><h3>{selected.name||"Mapped building"}</h3>{selected.localName&&selected.localName!==selected.name&&<p className="local-name">{selected.localName}</p>}<div className="feature-facts"><div><span>Height {selected.heightEstimated?"(estimated)":"(mapped)"}</span><strong>{selected.height.toFixed(1)}<small> m</small></strong></div><div><span>Footprint</span><strong>{selected.area?.toLocaleString()}<small> m²</small></strong></div></div><p className="height-note">{selected.heightEstimated?"Height inferred from levels, or a 14 m default. Not survey-grade.":"Height supplied by OpenStreetMap contributors."}</p><button className="primary-button" onClick={()=>command("focus")}><Crosshair size={15}/>Focus building</button><a className="osm-link" href={`https://www.openstreetmap.org/${selected.id.split("/").slice(0,2).join("/")}`} target="_blank" rel="noreferrer">View source feature<ArrowUpRight size={12}/></a></article>}
+            {selected&&!planning&&!modelFile&&<article className="feature-card"><div className="feature-card-top"><span><Building2 size={15}/>BUILDING DETAILS</span><button className="icon-button" aria-label="Close building details" onClick={closeDetails}><X size={16}/></button></div><h3 ref={detailsHeading} tabIndex={-1}>{selected.name||"Mapped building"}</h3>{selected.localName&&selected.localName!==selected.name&&<p className="local-name">{selected.localName}</p>}<div className="feature-facts"><div><span>Height {selected.heightEstimated?"(estimated)":"(mapped)"}</span><strong>{selected.height.toFixed(1)}<small> m</small></strong></div><div><span>Footprint</span><strong>{selected.area?.toLocaleString()}<small> m²</small></strong></div></div><p className="height-note">{selected.heightEstimated?"Height inferred from levels, or a 14 m default. Not survey-grade.":"Height supplied by OpenStreetMap contributors."}</p><button className="primary-button" onClick={()=>command("focus")}><Crosshair size={15}/>Focus building</button><a className="osm-link" href={`https://www.openstreetmap.org/${selected.id.split("/").slice(0,2).join("/")}`} target="_blank" rel="noreferrer">View source feature<ArrowUpRight size={12}/></a></article>}
+            <p className="scene-keyboard-help" id="scene-keyboard-help">Arrow keys pan. {view==="perspective"&&"Shift + arrow keys orbit. "}Tab to the zoom and reset controls.</p>
             <div className="map-bottom"><div className="map-legend"><span><i style={{background:"#b7c7cd"}}/>Built environment</span><span><i style={{background:"#92b79d"}}/>Landscape</span><span><i style={{background:"#8abcc6"}}/>Water</span></div><div className="interaction-hint"><MousePointer2 size={13}/>Drag to {view==="top"?"pan":"orbit"}<span>·</span>Scroll to zoom<span>·</span>Click to inspect</div></div>
             <a className="attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
           </div>
           <div className="stats-strip"><div className="stat"><span className="stat-icon"><Building2 size={20}/></span><div><span>Mapped buildings</span><strong>{loading?"—":buildings.length}<small>across this area</small></strong></div></div><div className="stat"><span className="stat-icon green"><Leaf size={20}/></span><div><span>Landscape features</span><strong>{loading?"—":campus?.features.filter(f=>f.kind==="park").length}<small>green spaces</small></strong></div></div><div className="stat"><span className="stat-icon blue"><Move3D size={20}/></span><div><span>Spatial reference</span><strong className="text-stat">WGS 84<small>Real-world coordinates</small></strong></div></div><div className="stat snapshot-stat"><span className="stat-icon"><Layers3 size={20}/></span><div><span>Data snapshot</span><strong className="text-stat">{campus?new Date(campus.fetchedAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}):"—"}<small>Not live sensor data</small></strong></div></div></div>
         </section>
+      </div>
       </main>
-      <footer className="page-footer"><span>Connected places. New possibilities.</span><span>Next.js <i/> Three.js <button onClick={()=>setInfo(true)}>About the data<ArrowUpRight size={12}/></button></span></footer>
+      <footer className="page-footer"><span>Connected places. New possibilities.</span><span>Next.js <i/> Three.js <button onClick={showInfo}>About the data<ArrowUpRight size={12}/></button></span></footer>
     </div>
     <input ref={upload} className="hidden-input" type="file" accept=".stl,.glb" aria-label="Upload 3D model" onChange={e=>{chooseModel(e.target.files?.[0]);e.target.value="";}}/>
-    {info&&<div className="modal-backdrop" onClick={()=>setInfo(false)}><section className="info-modal" role="dialog" aria-modal="true" aria-labelledby="about-title" onClick={e=>e.stopPropagation()}><div className="modal-heading"><Layers3 size={23}/><button className="icon-button" aria-label="Close about dialog" onClick={()=>setInfo(false)}><X size={20}/></button></div><div className="eyebrow">A SHARED VIEW OF PLACE</div><h2 id="about-title">Welcome to Campus Atlas.</h2><p>A geographic digital twin of Hong Kong Science Park and the CUHK campus, built with Next.js and Three.js.</p><h3>Real geography. Honest detail.</h3><p>Buildings, roads, green spaces and water are snapshots from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>, licensed under ODbL. Heights use mapped values where available, otherwise building levels × 3.5 m or a 14 m default. The snapshot does not model terrain elevation, complex multipolygon holes or unclosed rings.</p><h3>Your own models</h3><p>Open local STL or self-contained GLB files from My models. Files are processed on your device, never uploaded. There is no live telemetry, scan backend or print dispatch connected.</p><div className="modal-links"><a href="https://github.com/1155194577/py-touch-mapper-hk" target="_blank" rel="noreferrer">Map project<ArrowUpRight size={14}/></a><a href="https://github.com/1155194577/3d-print" target="_blank" rel="noreferrer">3D print project<ArrowUpRight size={14}/></a></div><button className="primary-button" onClick={()=>setInfo(false)}>Explore the campus<ChevronRight size={15}/></button></section></div>}
+    <dialog ref={aboutDialog} className="modal-backdrop" aria-labelledby="about-title" onClick={e=>{if(e.target===e.currentTarget)closeInfo();}}><section className="info-modal"><div className="modal-heading"><Layers3 size={23}/><button className="icon-button" aria-label="Close about dialog" onClick={closeInfo}><X size={20}/></button></div><div className="eyebrow">A SHARED VIEW OF PLACE</div><h2 id="about-title">Welcome to Campus Atlas.</h2><p>A geographic digital twin of Hong Kong Science Park and the CUHK campus, built with Next.js and Three.js.</p><h3>Real geography. Honest detail.</h3><p>Buildings, roads, green spaces and water are snapshots from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>, licensed under ODbL. Heights use mapped values where available, otherwise building levels × 3.5 m or a 14 m default. The snapshot does not model terrain elevation, complex multipolygon holes or unclosed rings.</p><h3>Your own models</h3><p>Open local STL or self-contained GLB files from My models. Files are processed on your device, never uploaded. There is no live telemetry, scan backend or print dispatch connected.</p><div className="modal-links"><a href="https://github.com/1155194577/py-touch-mapper-hk" target="_blank" rel="noreferrer">Map project<ArrowUpRight size={14}/></a><a href="https://github.com/1155194577/3d-print" target="_blank" rel="noreferrer">3D print project<ArrowUpRight size={14}/></a></div><button className="primary-button" onClick={closeInfo}>Explore the campus<ChevronRight size={15}/></button></section></dialog>
   </div>;
 }
