@@ -41,9 +41,36 @@ export function terrainCameraHeight(grid: CampusTerrain, x: number, y: number, z
   return Math.max(y, terrainHeight(grid, x, z) + 3);
 }
 
-export function terrainTopTarget(grid: CampusTerrain, minDistance: number) {
-  const maxHeight = grid.heights.reduce((max, height) => Math.max(max, height), -Infinity);
-  return maxHeight + 4 - minDistance;
+export type TerrainRoof = { minX: number; maxX: number; minZ: number; maxZ: number; height: number };
+
+export function terrainTopLevels(grid: CampusTerrain, roofs: TerrainRoof[], x: number, z: number, minDistance: number) {
+  const radius = 20;
+  const clearance = 4;
+  const height = terrainHeight(grid, x, z);
+  let localTerrain = height;
+  for (const dx of [-radius, -radius / 2, 0, radius / 2, radius]) {
+    for (const dz of [-radius, -radius / 2, 0, radius / 2, radius]) {
+      localTerrain = Math.max(localTerrain, terrainHeight(grid, x + dx, z + dz));
+    }
+  }
+  let target = localTerrain, floor = height + clearance;
+  for (const roof of roofs) {
+    const dx = Math.max(roof.minX - x, x - roof.maxX, 0);
+    const dz = Math.max(roof.minZ - z, z - roof.maxZ, 0);
+    if (dx >= radius || dz >= radius) continue;
+    const distance = Math.hypot(dx, dz);
+    const safeHeight = roof.height + clearance;
+    if (distance <= .05) floor = Math.max(floor, safeHeight);
+    const weight = Math.max(0, 1 - distance / radius);
+    target = Math.max(target, localTerrain + Math.max(0, safeHeight - minDistance - localTerrain) * weight);
+  }
+  return { target, floor };
+}
+
+export function terrainTopStep({ target, floor }: ReturnType<typeof terrainTopLevels>, targetY: number, cameraY: number) {
+  const difference = target - targetY;
+  const eased = Math.abs(difference) < .02 ? difference : difference * .18;
+  return Math.max(eased, floor - cameraY);
 }
 
 export function terrainSegment(grid: CampusTerrain, start: Point, end: Point): Point[] {

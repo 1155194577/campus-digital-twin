@@ -10,7 +10,7 @@ import type { CampusPlace, TransitPlace } from "@/lib/campus-places";
 import { partColors } from "@/lib/types";
 import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 import { campusFramePlanes, projectCampusFramePlane } from "@/lib/campus-frame";
-import { pickCampusSurface, terrainCameraHeight, terrainHeight, terrainSegment, terrainTopTarget, type CampusTerrain } from "@/lib/campus-terrain";
+import { pickCampusSurface, terrainCameraHeight, terrainHeight, terrainSegment, terrainTopLevels, terrainTopStep, type CampusTerrain, type TerrainRoof } from "@/lib/campus-terrain";
 import { createMapClickGesture } from "@/lib/map-click-gesture";
 import { cuhkBuildingRegion, cuhkRegions, type CuhkRegion } from "@/lib/cuhk-regions";
 
@@ -24,7 +24,7 @@ type SceneState = {
   setActive: (active: boolean) => void;
   view: ViewMode; perspectivePose?: CameraPose; topFrame?: CameraPose; campusBounds: THREE.Box3; modelBounds?: THREE.Box3;
   topSelectionTarget?: THREE.Vector3;
-  topTerrainTarget?: number;
+  topTerrainLevels?: (x: number, z: number) => ReturnType<typeof terrainTopLevels>;
   updateTransitMarker?: () => void;
   heightAt: (x: number, z: number) => number;
 };
@@ -47,7 +47,8 @@ function fitTopView(s: SceneState) {
   s.camera.far = Math.max(s.span * 14, s.controls.maxDistance + size.y);
   s.camera.updateProjectionMatrix();
   bounds.getCenter(s.controls.target);
-  s.controls.target.y = s.topTerrainTarget ?? s.controls.target.y;
+  const { x, z } = s.controls.target;
+  s.controls.target.y = s.topTerrainLevels?.(x, z).target ?? s.controls.target.y;
   s.camera.position.copy(s.controls.target).add(new THREE.Vector3(0, Math.max(s.controls.minDistance, distance), .01));
   s.focus = undefined;
   s.controls.update();
@@ -275,6 +276,7 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       groundEdge.position.copy(ground.position); scene.add(groundEdge);
     }
     const buildings: THREE.Mesh[] = [];
+    const terrainRoofs: TerrainRoof[] = [];
     const roads = new Map<string, THREE.BufferGeometry[]>();
     const outlines: THREE.BufferGeometry[] = [];
     const surfaces = { park: [] as THREE.BufferGeometry[], water: [] as THREE.BufferGeometry[] };
@@ -331,7 +333,15 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: .85, metalness: .02, clippingPlanes }));
       clipToTerrain(mesh.material);
       mesh.position.y = base;
-      campusBounds.max.y = Math.max(campusBounds.max.y, height + foundation + base);
+      const roof = height + foundation + base;
+      campusBounds.max.y = Math.max(campusBounds.max.y, roof);
+      if (terrain) {
+        geometry.computeBoundingBox();
+        if (geometry.boundingBox) {
+          const { min, max } = geometry.boundingBox;
+          terrainRoofs.push({ minX: min.x, maxX: max.x, minZ: min.z, maxZ: max.z, height: roof });
+        }
+      }
       mesh.userData = { feature, baseColor: color, region: campus.id === "cuhk" ? cuhkBuildingRegion(feature) : null };
       groups[feature.kind].add(mesh);
       buildings.push(mesh);
@@ -377,11 +387,12 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
         frame = undefined;
       }
     };
-    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial, invalidate, setActive, view: "perspective", campusBounds, heightAt, topTerrainTarget: terrain && terrainTopTarget(terrain, controls.minDistance) };
+    const topTerrainLevelsAt = terrain && ((x: number, z: number) => terrainTopLevels(terrain, terrainRoofs, x, z, controls.minDistance));
+    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial, invalidate, setActive, view: "perspective", campusBounds, heightAt, topTerrainLevels: topTerrainLevelsAt };
     function render() {
       if (sceneState.focus) {
         const target = sceneState.focus.clone();
-        if (sceneState.view === "top") target.y = sceneState.topTerrainTarget ?? target.y;
+        if (sceneState.view === "top" && terrain) target.y = controls.target.y;
         const delta = target.clone().sub(controls.target).multiplyScalar(.12);
         controls.target.add(delta); camera.position.add(delta);
         if (controls.target.distanceTo(target)<.1) sceneState.focus=undefined;
@@ -389,7 +400,15 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       const moved = controls.update();
       const { x, y, z } = camera.position;
       let heightAdjusted = false;
-      if (terrain && sceneState.view !== "top") {
+      if (sceneState.view === "top" && topTerrainLevelsAt) {
+        const levels = topTerrainLevelsAt(controls.target.x, controls.target.z);
+        const delta = terrainTopStep(levels, controls.target.y, y);
+        if (Math.abs(delta) > 1e-6) {
+          controls.target.y += delta;
+          camera.position.y += delta;
+          heightAdjusted = true;
+        }
+      } else if (terrain) {
         const floor = terrainCameraHeight(terrain, x, y, z);
         if (y < floor) {
           camera.position.y = floor;
@@ -418,7 +437,7 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       }
       frame = undefined;
       if (framesToSettle > 0) framesToSettle--;
-      if (moved || sceneState.focus || framesToSettle > 0) schedule();
+      if (moved || heightAdjusted || sceneState.focus || framesToSettle > 0) schedule();
     }
     state.current = sceneState;
     controls.addEventListener("change", invalidate);
@@ -596,7 +615,7 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
     const size = box.getSize(new THREE.Vector3());
     const radius = Math.max(110, Math.hypot(size.x, size.z) * .6) / (Math.tan(THREE.MathUtils.degToRad(s.camera.fov / 2)) * Math.min(1, s.camera.aspect));
     s.focus = undefined;
-    if (view === "top") center.y = s.topTerrainTarget ?? center.y;
+    if (view === "top") center.y = s.topTerrainLevels?.(center.x, center.z).target ?? center.y;
     s.controls.target.copy(center);
     const offset = view === "top" ? new THREE.Vector3(0, radius, .01) : new THREE.Vector3(.5, .72, .65).normalize().multiplyScalar(radius);
     s.camera.position.copy(center).add(offset);
@@ -616,7 +635,7 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       const mesh=transit?null:s.buildings.find(m=>m.userData.feature.id===selected.id);
       const center=transit?transitPosition(selected,campus,s.heightAt):mesh?new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()):null;
       if(center) {
-        const topTarget = s.view === "top" ? s.topTerrainTarget : undefined;
+        const topTarget = s.view === "top" ? s.topTerrainLevels?.(center.x, center.z).target : undefined;
         center.y = topTarget ?? center.y;
         const offset=topTarget!==undefined?new THREE.Vector3(0,255,.01):transit?s.camera.position.clone().sub(s.controls.target).setLength(255):new THREE.Vector3(130,150,160);
         s.controls.target.copy(center);s.camera.position.copy(center).add(offset);s.focus=undefined;

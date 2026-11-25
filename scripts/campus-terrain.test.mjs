@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { BoxGeometry, ConeGeometry, Mesh, PerspectiveCamera, Raycaster, Vector3 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { decodeCampusTerrain, pickCampusSurface, terrainCameraHeight, terrainHeight, terrainSegment, terrainTopTarget } from "../lib/campus-terrain.ts";
+import { decodeCampusTerrain, pickCampusSurface, terrainCameraHeight, terrainHeight, terrainSegment, terrainTopLevels, terrainTopStep } from "../lib/campus-terrain.ts";
 
 test("terrain occludes a building behind it but not a building in front of it", () => {
   const ray = new Raycaster(new Vector3(0, 8, 20), new Vector3(0, 0, -1));
@@ -61,27 +61,57 @@ test("Top view clears the western ridge without changing zoom as it pans across 
   const grid = decodeCampusTerrain(1765, 2054, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
   const camera = new PerspectiveCamera(), controls = new OrbitControls(camera);
   controls.minDistance = 40;
-  controls.target.set(-875, terrainTopTarget(grid, controls.minDistance), 282.36);
+  const levels = () => terrainTopLevels(grid, [], controls.target.x, controls.target.z, controls.minDistance);
+  controls.target.set(-875, 0, 282.36);
+  controls.target.y = levels().target;
   camera.position.copy(controls.target).add(new Vector3(0, 40, .01));
   controls.update();
   const zoom = camera.position.distanceTo(controls.target);
-  const altitude = camera.position.y;
+  const settle = () => {
+    for (let i = 0; i < 90; i++) {
+      controls.update();
+      const delta = terrainTopStep(levels(), controls.target.y, camera.position.y);
+      camera.position.y += delta;
+      controls.target.y += delta;
+      assert.ok(camera.position.y >= levels().floor - 1e-6);
+    }
+  };
   const pan = dx => {
     camera.position.x += dx;
     controls.target.x += dx;
-    controls.update();
-    assert.ok(Math.abs(camera.position.y - altitude) < 1e-6);
+    settle();
     assert.ok(Math.abs(camera.position.distanceTo(controls.target) - zoom) < 1e-6);
   };
   pan(-7.5);
-  assert.ok(camera.position.y >= terrainHeight(grid, camera.position.x, camera.position.z) + 3);
+  const altitude = camera.position.y;
   pan(-.01);
+  assert.ok(Math.abs(camera.position.y - altitude) < .1);
   pan(.01);
   for (let i = 0; i < 4; i++) {
     const priorAltitude = camera.position.y;
     camera.position.sub(controls.target).multiplyScalar(1.3).add(controls.target);
-    controls.update();
+    settle();
     assert.ok(camera.position.y > priorAltitude);
+  }
+});
+
+test("closest Top zoom clears the HKSTP satellite station and uses local height at the CUHK cycling hub", () => {
+  for (const [campus, id] of [["hkstp", "way/135904889"], ["cuhk", "way/345588225"]]) {
+    const { width, depth, features } = JSON.parse(readFileSync(new URL(`../public/data/${campus}.json`, import.meta.url)));
+    const bytes = readFileSync(new URL(`../public/data/${campus}-terrain.bin`, import.meta.url));
+    const grid = decodeCampusTerrain(width, depth, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    const { points, height } = features.find(feature => feature.id === id);
+    const xs = points.map(([x]) => x), zs = points.map(([, z]) => z);
+    const roof = {
+      minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs),
+      height: height + Math.max(...points.slice(1).flatMap((end, i) =>
+        terrainSegment(grid, points[i], end).map(([x, z]) => terrainHeight(grid, x, z)))),
+    };
+    const x = (roof.minX + roof.maxX) / 2, z = (roof.minZ + roof.maxZ) / 2;
+    const levels = terrainTopLevels(grid, [roof], x, z, 40);
+    const clearance = levels.target + 40 - roof.height;
+    assert.ok(clearance >= 4 && clearance < 60, `${campus} roof clearance: ${clearance}`);
+    assert.ok(terrainTopStep(levels, levels.target - 5, levels.target + 35) > 0);
   }
 });
 
