@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { BoxGeometry, ConeGeometry, Mesh, Raycaster, Vector3 } from "three";
-import { decodeCampusTerrain, pickCampusSurface, terrainHeight, terrainSegment } from "../lib/campus-terrain.ts";
+import { BoxGeometry, ConeGeometry, Mesh, PerspectiveCamera, Raycaster, Vector3 } from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { decodeCampusTerrain, pickCampusSurface, terrainCameraHeight, terrainHeight, terrainSegment } from "../lib/campus-terrain.ts";
 
 test("terrain occludes a building behind it but not a building in front of it", () => {
   const ray = new Raycaster(new Vector3(0, 8, 20), new Vector3(0, 0, -1));
@@ -30,6 +31,24 @@ test("terrain heights follow the ground triangles and clamp to the map boundary"
   assert.equal(terrainHeight(terrain, 1.25, 1.25), 5);
   assert.deepEqual(terrainSegment(terrain, [-2.5, -2.5], [2.5, 2.5]), [[-2.5, -2.5], [0, 0], [2.5, 2.5]]);
   assert.throws(() => decodeCampusTerrain(5, 5, new ArrayBuffer(6)), /Invalid campus terrain grid/);
+});
+
+test("a close orbit on the CUHK hillside clears the terrain under the camera", () => {
+  const bytes = readFileSync(new URL("../public/data/cuhk-terrain.bin", import.meta.url));
+  const grid = decodeCampusTerrain(1765, 2054, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  const camera = new PerspectiveCamera();
+  const controls = new OrbitControls(camera);
+  controls.target.set(-300, terrainHeight(grid, -300, -360), -360);
+  controls.minDistance = 40;
+  controls.maxPolarAngle = Math.PI / 2.15;
+  camera.position.copy(controls.target).add(new Vector3(40, 5, 0));
+  controls.update();
+  const { x, y, z } = camera.position;
+  assert.ok(y < terrainHeight(grid, x, z));
+  const lifted = terrainCameraHeight(grid, x, y, z);
+  assert.equal(lifted, terrainHeight(grid, x, z) + 3);
+  assert.equal(terrainCameraHeight(grid, x, lifted + 5, z), lifted + 5);
+  assert.equal(terrainCameraHeight(grid, 1000, 0, z), 0);
 });
 
 for (const [campus, columns, rows] of [["hkstp", 228, 224], ["cuhk", 354, 412]]) {

@@ -10,7 +10,7 @@ import type { CampusPlace, TransitPlace } from "@/lib/campus-places";
 import { partColors } from "@/lib/types";
 import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 import { campusFramePlanes, projectCampusFramePlane } from "@/lib/campus-frame";
-import { pickCampusSurface, terrainHeight, terrainSegment, type CampusTerrain } from "@/lib/campus-terrain";
+import { pickCampusSurface, terrainCameraHeight, terrainHeight, terrainSegment, type CampusTerrain } from "@/lib/campus-terrain";
 import { createMapClickGesture } from "@/lib/map-click-gesture";
 import { cuhkBuildingRegion, cuhkRegions, type CuhkRegion } from "@/lib/cuhk-regions";
 
@@ -367,7 +367,13 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
         if (controls.target.distanceTo(sceneState.focus)<.1) sceneState.focus=undefined;
       }
       const moved = controls.update();
-      if (dirty || moved) {
+      const { x, y, z } = camera.position;
+      const floor = terrain ? terrainCameraHeight(terrain, x, y, z) : y;
+      if (y < floor) {
+        camera.position.y = floor;
+        camera.lookAt(controls.target);
+      }
+      if (dirty || moved || y < floor) {
         if (sceneState.view === "top" && !terrain) {
           framePlanes.forEach((plane, i) => projectCampusFramePlane(plane, groundTop, camera.position, projectedPlanes[i]));
           if (clippingPlanes.length === framePlanes.length) clippingPlanes.push(...projectedPlanes);

@@ -35,6 +35,11 @@ export function terrainHeight(grid: CampusTerrain, x: number, z: number) {
     : se + (1 - dx) * (sw - se) + (1 - dz) * (ne - se);
 }
 
+export function terrainCameraHeight(grid: CampusTerrain, x: number, y: number, z: number) {
+  if (Math.abs(x) > grid.width / 2 || Math.abs(z) > grid.depth / 2) return y;
+  return Math.max(y, terrainHeight(grid, x, z) + 3);
+}
+
 export function terrainSegment(grid: CampusTerrain, start: Point, end: Point): Point[] {
   const [x0, z0] = gridCoordinates(grid, ...start), [x1, z1] = gridCoordinates(grid, ...end);
   const breaks = [0, 1];
