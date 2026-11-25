@@ -199,7 +199,7 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
     if (!container.current) return;
     const host = container.current;
     let renderer: THREE.WebGLRenderer;
-    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }); }
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, stencil: Boolean(terrain) }); }
     catch { callbacks.current.onError("3D rendering is unavailable. Enable WebGL or try another browser; the building directory is still available."); return; }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor("#e9f0f0");
@@ -250,8 +250,20 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
     const groundThickness = 8;
     const relief = terrain && terrainGeometry(terrain);
     const ground = new THREE.Mesh(relief || new THREE.BoxGeometry(campus.width, groundThickness, campus.depth), new THREE.MeshStandardMaterial({ color: "#dce8dc", roughness: 1 }));
-    if (!terrain) ground.position.y = groundTop - groundThickness / 2;
+    if (terrain) {
+      ground.renderOrder = -1;
+      ground.material.stencilRef = 1;
+      ground.material.stencilZPass = THREE.ReplaceStencilOp;
+    } else ground.position.y = groundTop - groundThickness / 2;
     scene.add(ground);
+    const terrainClippedMaterials: THREE.Material[] = [];
+    const clipToTerrain = (material: THREE.Material) => {
+      if (!terrain) return;
+      material.stencilFunc = THREE.EqualStencilFunc;
+      material.stencilRef = 1;
+      material.stencilWriteMask = 0;
+      terrainClippedMaterials.push(material);
+    };
     const campusBounds = new THREE.Box3().setFromObject(ground);
     if (terrain && relief) {
       const skirt = terrainSides(relief, terrain, campusBounds.min.y - groundThickness);
@@ -315,6 +327,7 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       }
       const color = feature.name ? "#d3dce0" : "#e1e6e4";
       const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: .85, metalness: .02, clippingPlanes }));
+      clipToTerrain(mesh.material);
       mesh.position.y = base;
       campusBounds.max.y = Math.max(campusBounds.max.y, height + foundation + base);
       mesh.userData = { feature, baseColor: color, region: campus.id === "cuhk" ? cuhkBuildingRegion(feature) : null };
@@ -327,7 +340,9 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       segments.forEach(geometry => geometry.dispose());
     }
     if (outlines.length) {
-      groups.building.add(new THREE.LineSegments(mergeGeometries(outlines), new THREE.LineBasicMaterial({ color: "#819a9e", transparent: true, opacity: .35, clippingPlanes })));
+      const material = new THREE.LineBasicMaterial({ color: "#819a9e", transparent: true, opacity: .35, clippingPlanes });
+      clipToTerrain(material);
+      groups.building.add(new THREE.LineSegments(mergeGeometries(outlines), material));
       outlines.forEach(geometry => geometry.dispose());
     }
     for (const kind of ["park", "water"] as const) {
@@ -347,6 +362,7 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
     let visible = true;
     let ready = false;
     let dirty = false;
+    let terrainOutlineClipped = false;
     let framesToSettle = 0;
     const dampingFrames = Math.ceil(Math.log(.001) / Math.log(1 - controls.dampingFactor));
     const schedule = () => { if (visible) frame ??= requestAnimationFrame(render); };
@@ -379,6 +395,12 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
           if (clippingPlanes.length === framePlanes.length) clippingPlanes.push(...projectedPlanes);
         } else {
           clippingPlanes.length = framePlanes.length;
+        }
+        const clipTerrainOutline = Boolean(terrain && sceneState.view === "top");
+        if (clipTerrainOutline !== terrainOutlineClipped) {
+          ground.material.stencilWrite = clipTerrainOutline;
+          terrainClippedMaterials.forEach(material => { material.stencilWrite = clipTerrainOutline; });
+          terrainOutlineClipped = clipTerrainOutline;
         }
         renderer.render(scene,camera);
         updateNorthHeading();
@@ -414,7 +436,7 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       if (!gesture.up(event) || model.children.length) return;
       const rect = renderer.domElement.getBoundingClientRect();
       raycaster.setFromCamera(new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1),camera);
-      const hit = pickCampusSurface(raycaster, groups.building.visible ? buildings : [], clippingPlanes, terrain ? ground : undefined);
+      const hit = pickCampusSurface(raycaster, groups.building.visible ? buildings : [], clippingPlanes, terrain ? ground : undefined, terrainOutlineClipped);
       if (hit && hit.object !== ground) callbacks.current.onSelect(hit.object.userData.feature);
       else if (callbacks.current.onMapPoint) {
         const point = terrain ? hit?.point

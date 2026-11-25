@@ -13,9 +13,10 @@ export function decodeCampusTerrain(width: number, depth: number, data: ArrayBuf
 
 export type CampusTerrain = ReturnType<typeof decodeCampusTerrain>;
 
-export function pickCampusSurface(ray: Raycaster, buildings: Object3D[], planes: Plane[], ground?: Object3D) {
-  return ray.intersectObjects(ground ? [ground, ...buildings] : buildings, false)
-    .find(({ object, point }) => object === ground || planes.every(plane => plane.distanceToPoint(point) >= 0));
+export function pickCampusSurface(ray: Raycaster, buildings: Object3D[], planes: Plane[], ground?: Object3D, requireGround = false) {
+  const hits = ray.intersectObjects(ground ? [ground, ...buildings] : buildings, false);
+  if (requireGround && !hits.some(({ object }) => object === ground)) return undefined;
+  return hits.find(({ object, point }) => object === ground || planes.every(plane => plane.distanceToPoint(point) >= 0));
 }
 
 function gridCoordinates(grid: CampusTerrain, x: number, z: number): Point {

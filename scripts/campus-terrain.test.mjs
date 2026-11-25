@@ -19,6 +19,11 @@ test("terrain occludes a building behind it but not a building in front of it", 
   building.position.z = 13;
   building.updateMatrixWorld();
   assert.equal(pickCampusSurface(ray, [building], [], hill)?.object, building);
+
+  hill.position.x = 10;
+  hill.updateMatrixWorld();
+  assert.equal(pickCampusSurface(ray, [building], [], hill)?.object, building);
+  assert.equal(pickCampusSurface(ray, [building], [], hill, true), undefined);
 });
 
 test("terrain heights follow the ground triangles and clamp to the map boundary", () => {
