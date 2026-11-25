@@ -367,13 +367,16 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
     const raycaster = new THREE.Raycaster();
     const gesture = createMapClickGesture();
     const doubleTap = createDoubleTapDetector();
-    const zoomAt = (pointer: THREE.Vector2) => {
+    let tapPoint: THREE.Vector3 | null = null;
+    const zoomPoint = (pointer: THREE.Vector2) => {
       raycaster.setFromCamera(pointer, camera);
-      const hit = raycaster.intersectObjects(model.children.length ? [model] : groups.building.visible ? buildings : [], true)
+      return raycaster.intersectObjects(model.children.length ? [model] : groups.building.visible ? buildings : [], true)
         .find(({ point }) => model.children.length || clippingPlanes.every(plane => plane.distanceToPoint(point) >= 0))?.point
         ?? raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
-      if (!hit) return;
-      const offset = camera.position.clone().sub(controls.target).multiplyScalar(.5).clampLength(controls.minDistance, sceneState.maxDistance);
+    };
+    const zoomAt = (hit: THREE.Vector3) => {
+      const base = sceneState.flight?.to ?? getCameraPose(sceneState);
+      const offset = base.position.clone().sub(base.target).multiplyScalar(.5).clampLength(controls.minDistance, sceneState.maxDistance);
       flyTo(sceneState, { target: hit, position: hit.clone().add(offset) }, 400);
     };
     const move = (event: PointerEvent) => {
@@ -386,7 +389,11 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
       if (!gesture.up(event)) return;
       const rect = renderer.domElement.getBoundingClientRect();
       const pointer = new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);
-      if (doubleTap.tap(event) && !callbacks.current.onMapPoint) { zoomAt(pointer); return; }
+      if (!callbacks.current.onMapPoint) {
+        // Resolve the zoom point on the first tap; a selection flight may move the camera before the second.
+        if (doubleTap.tap(event)) { if (tapPoint) zoomAt(tapPoint); tapPoint = null; return; }
+        tapPoint = zoomPoint(pointer);
+      }
       if (model.children.length) return;
       raycaster.setFromCamera(pointer,camera);
       const hit = groups.building.visible ? raycaster.intersectObjects(buildings,false)
