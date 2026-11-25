@@ -32,7 +32,7 @@ No API keys, database, backend service or pre-commit hooks are required.
 - HKSTP and CUHK campus switching, plus a combined HKSTP + CUHK view that joins both snapshots on one ground, with bilingual building-name search and inspection.
 - CUHK course timetable by date, Hong Kong time, and building or venue, with mapped buildings highlighted.
 - A shareable walking-plan estimate using selected features or map points. The mapped path can include steps or crossings, and is not accessibility-verified.
-- Three.js orbit, pan, zoom, focus, reset, top-down view and layer visibility.
+- Map-style navigation: drag to pan, right-drag or two fingers to rotate, zoom toward the cursor, double-click or double-tap to zoom in, and animated focus, reset and top-down transitions.
 - Side-by-side comparison with the full-detail HKSTP and CUHK tactile STLs, north up at the same geographic extent.
 - Local STL and self-contained GLB viewing, with a 50 MB file limit.
 - GeoJSON export and responsive building directory.

@@ -11,15 +11,16 @@ import { partColors } from "@/lib/types";
 import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 import { campusFramePlanes, projectCampusFramePlane } from "@/lib/campus-frame";
 import { pickCampusSurface, terrainCameraHeight, terrainHeight, terrainSegment, terrainTopLevels, terrainTopStep, type CampusTerrain, type TerrainRoof } from "@/lib/campus-terrain";
-import { createMapClickGesture } from "@/lib/map-click-gesture";
+import { createDoubleTapDetector, createMapClickGesture } from "@/lib/map-click-gesture";
+import { fitDistance, interpolatePose, viewDirection, type CameraPose } from "@/lib/camera-flight";
 import { cuhkBuildingRegion, cuhkRegions, type CuhkRegion } from "@/lib/cuhk-regions";
 
-type CameraPose = { position: THREE.Vector3; target: THREE.Vector3 };
+type Flight = { from: CameraPose; to: CameraPose; start: number; duration: number };
 
 type SceneState = {
   scene: THREE.Scene; camera: THREE.PerspectiveCamera; renderer: THREE.WebGLRenderer;
   controls: OrbitControls; groups: Record<keyof Layers, THREE.Group>; buildings: THREE.Mesh[];
-  model: THREE.Group; span: number; focus?: THREE.Vector3; initial: THREE.Vector3; invalidate: () => void;
+  model: THREE.Group; span: number; flight?: Flight; maxDistance: number; initial: THREE.Vector3; invalidate: () => void;
   route: THREE.Group;
   setActive: (active: boolean) => void;
   view: ViewMode; perspectivePose?: CameraPose; topFrame?: CameraPose; campusBounds: THREE.Box3; modelBounds?: THREE.Box3;
@@ -38,22 +39,58 @@ function isAtTopFrame(s: SceneState) {
   return frame && frame.position.distanceToSquared(s.camera.position) < 1e-6 && frame.target.distanceToSquared(s.controls.target) < 1e-6;
 }
 
-function fitTopView(s: SceneState) {
+const flightDuration = 650;
+const minFramePolar = THREE.MathUtils.degToRad(30), maxFramePolar = THREE.MathUtils.degToRad(65);
+const topOffset = (distance: number) => new THREE.Vector3(0, distance, .01);
+
+function setMaxDistance(s: SceneState, distance: number) {
+  s.maxDistance = distance;
+  if (!s.flight) s.controls.maxDistance = distance;
+}
+
+function stopFlight(s: SceneState) {
+  if (!s.flight) return;
+  s.flight = undefined;
+  s.controls.maxDistance = s.maxDistance;
+}
+
+function flyTo(s: SceneState, to: CameraPose, duration = flightDuration) {
+  if (duration <= 0 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    stopFlight(s);
+    s.controls.target.copy(to.target); s.camera.position.copy(to.position);
+    s.controls.update(); s.invalidate();
+    return;
+  }
+  // Interpolated poses may leave the zoom range between two valid end poses.
+  s.controls.maxDistance = Infinity;
+  s.flight = { from: getCameraPose(s), to: { position: to.position.clone(), target: to.target.clone() }, start: performance.now(), duration };
+  s.invalidate();
+}
+
+function frame(s: SceneState, center: THREE.Vector3, radius: number, zoom: "fit" | "closer") {
+  const fit = THREE.MathUtils.clamp(fitDistance(radius, s.camera.fov, s.camera.aspect), s.controls.minDistance, s.maxDistance);
+  const base = s.flight?.to ?? getCameraPose(s);
+  const offset = base.position.clone().sub(base.target);
+  const distance = zoom === "fit" || offset.length() > fit * 2.5 ? fit : offset.length();
+  const position = s.view === "top" ? topOffset(distance)
+    : distance === fit ? viewDirection(offset, minFramePolar, maxFramePolar).multiplyScalar(distance) : offset;
+  const target = center.clone();
+  if (s.view === "top") target.y = s.topTerrainLevels?.(target.x, target.z).target ?? target.y;
+  flyTo(s, { target, position: position.add(target) });
+}
+
+function fitTopView(s: SceneState, animate = true) {
   const bounds = s.modelBounds ?? s.campusBounds;
   const size = bounds.getSize(new THREE.Vector3());
   const halfFov = THREE.MathUtils.degToRad(s.camera.getEffectiveFOV() / 2);
   const distance = size.y / 2 + Math.max(size.x / s.camera.aspect, size.z) * 1.15 / (2 * Math.tan(halfFov));
-  s.controls.maxDistance = Math.max(s.span * 3.2, distance * 1.3);
-  s.camera.far = Math.max(s.span * 14, s.controls.maxDistance + size.y);
+  setMaxDistance(s, Math.max(s.span * 3.2, distance * 1.3));
+  s.camera.far = Math.max(s.span * 14, s.maxDistance + size.y);
   s.camera.updateProjectionMatrix();
-  bounds.getCenter(s.controls.target);
-  const { x, z } = s.controls.target;
-  s.controls.target.y = s.topTerrainLevels?.(x, z).target ?? s.controls.target.y;
-  s.camera.position.copy(s.controls.target).add(new THREE.Vector3(0, Math.max(s.controls.minDistance, distance), .01));
-  s.focus = undefined;
-  s.controls.update();
-  s.topFrame = getCameraPose(s);
-  s.invalidate();
+  const target = bounds.getCenter(new THREE.Vector3());
+  target.y = s.topTerrainLevels?.(target.x, target.z).target ?? target.y;
+  s.topFrame = { target, position: target.clone().add(topOffset(Math.max(s.controls.minDistance, distance))) };
+  flyTo(s, s.topFrame, animate ? flightDuration : 0);
 }
 
 function transitPosition(place: TransitPlace, campus: Campus, heightAt: SceneState["heightAt"]) {
@@ -115,6 +152,13 @@ function terrainSurface(features: Feature[], grid: CampusTerrain, geometry: THRE
     polygonOffset: true, polygonOffsetFactor: kind === "water" ? -2 : -1, polygonOffsetUnits: -1,
   }));
 }
+function placeFrame(s: SceneState, place: CampusPlace, campus: Campus) {
+  if (isTransitPlace(place)) return { center: transitPosition(place, campus, s.heightAt), radius: 45 };
+  const mesh = s.buildings.find(m => m.userData.feature.id === place.id);
+  if (!mesh) return null;
+  const box = new THREE.Box3().setFromObject(mesh);
+  return { center: box.getCenter(new THREE.Vector3()), radius: Math.max(25, box.getSize(new THREE.Vector3()).length() / 2) };
+}
 function disposeObject(object: THREE.Object3D) {
   object.traverse(child => {
     if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.Sprite) {
@@ -169,10 +213,11 @@ function fitModel(s: SceneState, upAxis: UpAxis): ModelInfo | null {
   const offset = new THREE.Vector3(-center.x, -box.min.y, -center.z);
   pivot.position.add(offset);
   s.modelBounds = box.translate(offset);
-  s.controls.target.set(0, (box.max.y - box.min.y) / 2, 0); s.camera.position.copy(s.initial); s.focus = undefined;
+  stopFlight(s);
+  s.controls.target.set(0, (box.max.y - box.min.y) / 2, 0); s.camera.position.copy(s.initial);
   if (s.view === "top") {
     s.perspectivePose = getCameraPose(s);
-    fitTopView(s);
+    fitTopView(s, false);
   } else { s.controls.update(); s.invalidate(); }
   let triangles = 0;
   pivot.traverse(child => { if (child instanceof THREE.Mesh) { const g = child.geometry as THREE.BufferGeometry; triangles += (g.index?.count ?? g.getAttribute("position")?.count ?? 0) / 3 * (child instanceof THREE.InstancedMesh ? child.count : 1); } });
@@ -239,7 +284,16 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
     controls.enableDamping = true; controls.dampingFactor = .08;
     controls.maxPolarAngle = Math.PI / 2.15;
     controls.minDistance = 40; controls.maxDistance = span * 3.2;
-    controls.screenSpacePanning = true;
+    controls.zoomToCursor = true;
+    // OrbitControls measures pinch centres in page coordinates but the canvas in viewport coordinates.
+    type ZoomInternals = { _handleTouchMoveDolly(event: PointerEvent): void; _updateZoomParameters(x: number, y: number): void };
+    const zoomInternals = controls as unknown as ZoomInternals;
+    const pinchDolly = zoomInternals._handleTouchMoveDolly;
+    const updateZoom = zoomInternals._updateZoomParameters;
+    zoomInternals._handleTouchMoveDolly = function (this: ZoomInternals, event) {
+      this._updateZoomParameters = (x, y) => updateZoom.call(this, x - window.scrollX, y - window.scrollY);
+      try { pinchDolly.call(this, event); } finally { this._updateZoomParameters = updateZoom; }
+    };
     scene.add(new THREE.HemisphereLight(0xffffff, 0x849c9a, 2.2));
     const sun = new THREE.DirectionalLight(0xfff6e8, 3.2);
     sun.position.set(-600,1000,300); scene.add(sun);
@@ -388,14 +442,16 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       }
     };
     const topTerrainLevelsAt = terrain && ((x: number, z: number) => terrainTopLevels(terrain, terrainRoofs, x, z, controls.minDistance));
-    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial, invalidate, setActive, view: "perspective", campusBounds, heightAt, topTerrainLevels: topTerrainLevelsAt };
+    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial, invalidate, setActive, view: "perspective", campusBounds, maxDistance: controls.maxDistance, heightAt, topTerrainLevels: topTerrainLevelsAt };
+    const flightPose: CameraPose = { position: new THREE.Vector3(), target: new THREE.Vector3() };
     function render() {
-      if (sceneState.focus) {
-        const target = sceneState.focus.clone();
-        if (sceneState.view === "top" && terrain) target.y = controls.target.y;
-        const delta = target.clone().sub(controls.target).multiplyScalar(.12);
-        controls.target.add(delta); camera.position.add(delta);
-        if (controls.target.distanceTo(target)<.1) sceneState.focus=undefined;
+      const flight = sceneState.flight;
+      if (flight) {
+        const t = (performance.now() - flight.start) / flight.duration;
+        const pose = t >= 1 ? flight.to : interpolatePose(flight.from, flight.to, t, flightPose);
+        controls.target.copy(pose.target); camera.position.copy(pose.position);
+        if (t >= 1) stopFlight(sceneState);
+        dirty = true;
       }
       const moved = controls.update();
       const { x, y, z } = camera.position;
@@ -437,22 +493,37 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       }
       frame = undefined;
       if (framesToSettle > 0) framesToSettle--;
-      if (moved || heightAdjusted || sceneState.focus || framesToSettle > 0) schedule();
+      if (moved || heightAdjusted || sceneState.flight || framesToSettle > 0) schedule();
     }
     state.current = sceneState;
     controls.addEventListener("change", invalidate);
+    const interrupt = () => stopFlight(sceneState);
+    controls.addEventListener("start", interrupt);
     const resize = () => {
       const { width, height } = host.getBoundingClientRect();
       if (!width || !height) return;
       renderer.setSize(width,height);
       const aspectChanged = camera.aspect !== width / height;
       camera.aspect = width / height;
-      if (sceneState.view === "top" && aspectChanged && isAtTopFrame(sceneState)) fitTopView(sceneState);
+      if (sceneState.view === "top" && aspectChanged && isAtTopFrame(sceneState)) fitTopView(sceneState, false);
       else { camera.updateProjectionMatrix(); invalidate(); }
     };
     const observer = new ResizeObserver(resize); observer.observe(host); resize();
     const raycaster = new THREE.Raycaster();
     const gesture = createMapClickGesture();
+    const doubleTap = createDoubleTapDetector();
+    let tapPoint: THREE.Vector3 | null = null;
+    const zoomPoint = (pointer: THREE.Vector2) => {
+      raycaster.setFromCamera(pointer, camera);
+      const hit = model.children.length ? raycaster.intersectObject(model, true)[0]
+        : pickCampusSurface(raycaster, groups.building.visible ? buildings : [], clippingPlanes, terrain ? ground : undefined, terrainOutlineClipped);
+      return hit?.point ?? raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+    };
+    const zoomAt = (hit: THREE.Vector3) => {
+      const base = sceneState.flight?.to ?? getCameraPose(sceneState);
+      const offset = base.position.clone().sub(base.target).multiplyScalar(.5).clampLength(controls.minDistance, sceneState.maxDistance);
+      flyTo(sceneState, { target: hit, position: hit.clone().add(offset) }, 400);
+    };
     const move = (event: PointerEvent) => {
       gesture.move(event);
       if (!event.buttons && event.pointerType !== "touch") return;
@@ -460,9 +531,16 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       schedule();
     };
     const up = (event: PointerEvent) => {
-      if (!gesture.up(event) || model.children.length) return;
+      if (!gesture.up(event)) return;
       const rect = renderer.domElement.getBoundingClientRect();
-      raycaster.setFromCamera(new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1),camera);
+      const pointer = new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);
+      if (!callbacks.current.onMapPoint) {
+        // Resolve the zoom point on the first tap; a selection flight may move the camera before the second.
+        if (doubleTap.tap(event)) { const point = tapPoint ?? zoomPoint(pointer); if (point) zoomAt(point); tapPoint = null; return; }
+        tapPoint = zoomPoint(pointer);
+      }
+      if (model.children.length) return;
+      raycaster.setFromCamera(pointer,camera);
       const hit = pickCampusSurface(raycaster, groups.building.visible ? buildings : [], clippingPlanes, terrain ? ground : undefined, terrainOutlineClipped);
       if (hit && hit.object !== ground) callbacks.current.onSelect(hit.object.userData.feature);
       else if (callbacks.current.onMapPoint) {
@@ -475,12 +553,14 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
     renderer.domElement.addEventListener("pointermove", move);
     renderer.domElement.addEventListener("pointerup", up);
     renderer.domElement.addEventListener("pointercancel", gesture.cancel);
+    renderer.domElement.addEventListener("keydown", interrupt);
     const lost = (event: Event) => { event.preventDefault(); callbacks.current.onError("The 3D graphics connection was interrupted. Reload the page to reconnect."); };
     renderer.domElement.addEventListener("webglcontextlost",lost);
     invalidate();
     return () => {
       if (frame !== undefined) cancelAnimationFrame(frame);
-      observer.disconnect(); controls.removeEventListener("change", invalidate); controls.dispose();
+      observer.disconnect(); controls.removeEventListener("change", invalidate); controls.removeEventListener("start", interrupt); controls.dispose();
+      renderer.domElement.removeEventListener("keydown", interrupt);
       renderer.domElement.removeEventListener("pointerdown",gesture.down); renderer.domElement.removeEventListener("pointerup",up);
       renderer.domElement.removeEventListener("pointercancel",gesture.cancel);
       renderer.domElement.removeEventListener("pointermove",move);
@@ -528,52 +608,42 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
   }, [selected,campus,scheduledBuildings,colorRegions,highlightedRegion,terrain]);
   useEffect(() => {
     const s = state.current; if(!s)return;
-    if (!selected) s.focus = undefined;
-    else if (isTransitPlace(selected)) s.focus = transitPosition(selected, campus, s.heightAt);
-    else {
-      const x = selected.points.reduce((a,p)=>a+p[0],0)/selected.points.length;
-      const z = selected.points.reduce((a,p)=>a+p[1],0)/selected.points.length;
-      s.focus = new THREE.Vector3(x,s.heightAt(x,z),z);
-    }
-    if (s.view === "top") {
-      const selectedMesh = selected && s.buildings.find(mesh => mesh.userData.feature.id === selected.id);
-      s.topSelectionTarget = selectedMesh ? new THREE.Box3().setFromObject(selectedMesh).getCenter(new THREE.Vector3()) : s.focus?.clone();
-    }
-    s.invalidate();
+    const place = selected && placeFrame(s, selected, campus);
+    if (s.view === "top") s.topSelectionTarget = place?.center;
+    if (place) frame(s, place.center, place.radius, "closer");
   }, [selected,campus,terrain]);
   useEffect(() => {
     const s=state.current; if(!s)return;
     const distance=s.camera.position.distanceTo(s.controls.target);
     s.view = view;
-    s.controls.enableRotate=view!=="top";
-    s.controls.screenSpacePanning=view!=="top"||!terrain;
-    s.controls.mouseButtons.LEFT=view==="top"?THREE.MOUSE.PAN:THREE.MOUSE.ROTATE;
-    s.controls.touches.ONE=view==="top"?THREE.TOUCH.PAN:THREE.TOUCH.ROTATE;
     if (view === "top") {
-      s.perspectivePose = getCameraPose(s);
+      s.perspectivePose = s.flight?.to ?? getCameraPose(s);
       s.topSelectionTarget = undefined;
       fitTopView(s);
       return;
     }
-    s.controls.maxDistance = s.span * 3.2;
+    setMaxDistance(s, s.span * 3.2);
     s.camera.far = s.span * 14;
     s.camera.updateProjectionMatrix();
     if (s.perspectivePose) {
       const { position, target } = s.perspectivePose;
-      if (s.topSelectionTarget) {
-        s.controls.target.copy(s.topSelectionTarget);
-        s.camera.position.copy(position).sub(target).add(s.topSelectionTarget);
-        s.focus = undefined;
-      } else {
-        s.controls.target.copy(target);
-        s.camera.position.copy(position);
-      }
+      const center = s.topSelectionTarget ?? target;
+      flyTo(s, { target: center.clone(), position: position.clone().sub(target).add(center) });
       s.topSelectionTarget = undefined;
       s.perspectivePose = undefined;
-    } else s.camera.position.copy(s.controls.target).add(new THREE.Vector3(.5,.72,.65).normalize().multiplyScalar(distance));
-    s.controls.update();
-    s.invalidate();
+    } else if (!s.flight) flyTo(s, { target: s.controls.target.clone(), position: s.controls.target.clone().add(new THREE.Vector3(.5,.72,.65).normalize().multiplyScalar(distance)) });
   },[view,campus,terrain]);
+  useEffect(() => {
+    const s = state.current; if (!s) return;
+    // Campus maps pan like a map; uploaded models keep orbit-first inspection.
+    const orbit = modelFiles.length > 0 && view !== "top";
+    s.controls.enableRotate = view !== "top";
+    s.controls.screenSpacePanning = orbit;
+    s.controls.mouseButtons.LEFT = orbit ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
+    s.controls.mouseButtons.RIGHT = orbit ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+    s.controls.touches.ONE = orbit ? THREE.TOUCH.ROTATE : THREE.TOUCH.PAN;
+    s.controls.touches.TWO = view === "top" || orbit ? THREE.TOUCH.DOLLY_PAN : THREE.TOUCH.DOLLY_ROTATE;
+  }, [view, campus, modelFiles, terrain]);
   useEffect(() => {
     const s = state.current;
     if (!s) return;
@@ -614,35 +684,21 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const radius = Math.max(110, Math.hypot(size.x, size.z) * .6) / (Math.tan(THREE.MathUtils.degToRad(s.camera.fov / 2)) * Math.min(1, s.camera.aspect));
-    s.focus = undefined;
     if (view === "top") center.y = s.topTerrainLevels?.(center.x, center.z).target ?? center.y;
-    s.controls.target.copy(center);
-    const offset = view === "top" ? new THREE.Vector3(0, radius, .01) : new THREE.Vector3(.5, .72, .65).normalize().multiplyScalar(radius);
-    s.camera.position.copy(center).add(offset);
-    s.controls.update();
-    s.invalidate();
+    const offset = view === "top" ? topOffset(radius) : new THREE.Vector3(.5, .72, .65).normalize().multiplyScalar(radius);
+    flyTo(s, { target: center, position: center.clone().add(offset) });
   }, [campus, modelFiles, routeStart, routeDestination, routePath, view, terrain]);
   useEffect(()=>{
     const s=state.current; if(!s||!action||lastAction.current===action)return;
     lastAction.current=action;
-    if(action.type==="reset") {s.controls.target.set(0,s.heightAt(0,0),0); s.camera.position.copy(s.initial); s.focus=undefined;}
+    if(action.type==="reset") flyTo(s,{target:new THREE.Vector3(0,s.heightAt(0,0),0),position:s.initial.clone()});
     if(action.type==="zoomIn"||action.type==="zoomOut") {
-      const offset=s.camera.position.clone().sub(s.controls.target).multiplyScalar(action.type==="zoomIn"?.75:1.3);
-      offset.clampLength(s.controls.minDistance,s.controls.maxDistance); s.camera.position.copy(s.controls.target).add(offset);
+      const base=s.flight?.to??getCameraPose(s);
+      const offset=base.position.clone().sub(base.target).multiplyScalar(action.type==="zoomIn"?.6:1.6).clampLength(s.controls.minDistance,s.maxDistance);
+      flyTo(s,{target:base.target,position:base.target.clone().add(offset)},300);
     }
-    if(action.type==="focus"&&selected) {
-      const transit=isTransitPlace(selected);
-      const mesh=transit?null:s.buildings.find(m=>m.userData.feature.id===selected.id);
-      const center=transit?transitPosition(selected,campus,s.heightAt):mesh?new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()):null;
-      if(center) {
-        const topTarget = s.view === "top" ? s.topTerrainLevels?.(center.x, center.z).target : undefined;
-        center.y = topTarget ?? center.y;
-        const offset=topTarget!==undefined?new THREE.Vector3(0,255,.01):transit?s.camera.position.clone().sub(s.controls.target).setLength(255):new THREE.Vector3(130,150,160);
-        s.controls.target.copy(center);s.camera.position.copy(center).add(offset);s.focus=undefined;
-      }
-    }
-    s.controls.update();
-    s.invalidate();
+    const place=action.type==="focus"&&selected?placeFrame(s,selected,campus):null;
+    if(place) frame(s,place.center,place.radius,"fit");
   },[action,selected,campus]);
   useEffect(()=>{
     const s=state.current; if(!s)return;
