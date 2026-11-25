@@ -61,6 +61,7 @@ export default function CampusApp() {
   const [terrainEnabled,setTerrainEnabled]=useState(false);
   const [terrainData,setTerrainData]=useState<{campus:Campus; grid:CampusTerrain}>();
   const [comparePrint,setComparePrint]=useState(false);
+  useEffect(()=>{ if(!hasPrintReference(campusId)) setComparePrint(false); },[campusId]);
   const [action,setAction]=useState<ViewerAction|null>(null);
   const [tab,setTab]=useState<"explore"|"models">("explore");
   const [modelFiles,setModelFiles]=useState<File[]>([]);

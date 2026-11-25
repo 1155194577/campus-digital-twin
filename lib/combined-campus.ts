@@ -8,6 +8,10 @@ export const combinedBounds = [114.198, 22.410, 114.216, 22.431] as const;
 const metresPerDegree = 111320;
 const round = (value: number) => Math.round(value * 100) / 100;
 
+// Both snapshots fetch whole OSM coastline ways, so the overlap strip repeats some ways.
+const sameLine = (a: Point[], b: Point[]) =>
+  a.length === b.length && a.every(([x, y], i) => Math.abs(x - b[i][0]) < 0.1 && Math.abs(y - b[i][1]) < 0.1);
+
 export function combineCampuses(sources: readonly Campus[]): Campus {
   const [west, south, east, north] = combinedBounds;
   const lat = (south + north) / 2, lon = (west + east) / 2;
@@ -26,7 +30,10 @@ export function combineCampuses(sources: readonly Campus[]): Campus {
       seen.add(feature.id);
       features.push({ ...feature, points: feature.points.map(move) });
     }
-    for (const line of source.coastline ?? []) coastline.push(line.map(move));
+    for (const line of source.coastline ?? []) {
+      const moved = line.map(move);
+      if (!coastline.some(other => sameLine(other, moved))) coastline.push(moved);
+    }
     Object.assign(walkDetails, source.walkDetails);
   }
   return {

@@ -35,3 +35,10 @@ test("combined ground covers both campuses", () => {
   }
   assert.equal(combined.fetchedAt, [hkstp.fetchedAt, cuhk.fetchedAt].sort()[0]);
 });
+
+test("coastline ways fetched by both snapshots appear once", () => {
+  const key = line => line.map(([x, y]) => `${Math.round(x)},${Math.round(y)}`).join(" ");
+  const keys = combined.coastline.map(key);
+  assert.equal(new Set(keys).size, keys.length);
+  assert.ok(combined.coastline.length < hkstp.coastline.length + cuhk.coastline.length);
+});
