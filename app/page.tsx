@@ -36,7 +36,12 @@ const projects = [
   {
     category: "3D modeling · Fabrication",
     title: "From scan to print-ready model",
-    description: "A workflow that turns a photograph or LiDAR scan into a scaled, repaired STL for 3D printing.",
+    description: (
+      <>
+        Our <a href="https://github.com/1155194577/lidar-scanner-ios">LiDAR Scanner for iOS</a> captures rooms and objects in 3D and exports scans as STL.
+        {" "}The print workflow turns photos or scans into scaled, repaired STLs for 3D printing.
+      </>
+    ),
     href: "https://github.com/1155194577/3d-print",
     action: "View the print workflow",
   },
