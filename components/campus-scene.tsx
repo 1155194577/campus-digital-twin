@@ -10,7 +10,7 @@ import type { CampusPlace, TransitPlace } from "@/lib/campus-places";
 import { partColors } from "@/lib/types";
 import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 import { campusFramePlanes, projectCampusFramePlane } from "@/lib/campus-frame";
-import { terrainHeight, terrainSegment, type CampusTerrain } from "@/lib/campus-terrain";
+import { pickCampusSurface, terrainHeight, terrainSegment, type CampusTerrain } from "@/lib/campus-terrain";
 import { createMapClickGesture } from "@/lib/map-click-gesture";
 import { cuhkBuildingRegion, cuhkRegions, type CuhkRegion } from "@/lib/cuhk-regions";
 
@@ -408,11 +408,10 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       if (!gesture.up(event) || model.children.length) return;
       const rect = renderer.domElement.getBoundingClientRect();
       raycaster.setFromCamera(new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1),camera);
-      const hit = groups.building.visible ? raycaster.intersectObjects(buildings,false)
-        .find(({ point }) => clippingPlanes.every(plane => plane.distanceToPoint(point) >= 0)) : null;
-      if (hit) callbacks.current.onSelect(hit.object.userData.feature);
+      const hit = pickCampusSurface(raycaster, groups.building.visible ? buildings : [], clippingPlanes, terrain ? ground : undefined);
+      if (hit && hit.object !== ground) callbacks.current.onSelect(hit.object.userData.feature);
       else if (callbacks.current.onMapPoint) {
-        const point = terrain ? raycaster.intersectObject(ground, false)[0]?.point
+        const point = terrain ? hit?.point
           : raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
         if (point && framePlanes.every(plane => plane.distanceToPoint(point) >= 0)) callbacks.current.onMapPoint([point.x, point.z]);
       } else callbacks.current.onSelect(null);

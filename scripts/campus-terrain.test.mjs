@@ -1,7 +1,24 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { decodeCampusTerrain, terrainHeight, terrainSegment } from "../lib/campus-terrain.ts";
+import { BoxGeometry, ConeGeometry, Mesh, Raycaster, Vector3 } from "three";
+import { decodeCampusTerrain, pickCampusSurface, terrainHeight, terrainSegment } from "../lib/campus-terrain.ts";
+
+test("terrain occludes a building behind it but not a building in front of it", () => {
+  const ray = new Raycaster(new Vector3(0, 8, 20), new Vector3(0, 0, -1));
+  const hill = new Mesh(new ConeGeometry(7, 16, 24));
+  hill.position.set(0, 8, 5);
+  hill.updateMatrixWorld();
+  const building = new Mesh(new BoxGeometry(4, 16, 4));
+  building.position.set(0, 8, -5);
+  building.updateMatrixWorld();
+
+  assert.equal(pickCampusSurface(ray, [building], [])?.object, building);
+  assert.equal(pickCampusSurface(ray, [building], [], hill)?.object, hill);
+  building.position.z = 13;
+  building.updateMatrixWorld();
+  assert.equal(pickCampusSurface(ray, [building], [], hill)?.object, building);
+});
 
 test("terrain heights follow the ground triangles and clamp to the map boundary", () => {
   const data = new ArrayBuffer(8);

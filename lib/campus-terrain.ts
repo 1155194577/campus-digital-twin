@@ -1,3 +1,4 @@
+import type { Object3D, Plane, Raycaster } from "three";
 import type { Point } from "./types";
 
 const cellSize = 5;
@@ -11,6 +12,11 @@ export function decodeCampusTerrain(width: number, depth: number, data: ArrayBuf
 }
 
 export type CampusTerrain = ReturnType<typeof decodeCampusTerrain>;
+
+export function pickCampusSurface(ray: Raycaster, buildings: Object3D[], planes: Plane[], ground?: Object3D) {
+  return ray.intersectObjects(ground ? [ground, ...buildings] : buildings, false)
+    .find(({ object, point }) => object === ground || planes.every(plane => plane.distanceToPoint(point) >= 0));
+}
 
 function gridCoordinates(grid: CampusTerrain, x: number, z: number): Point {
   return [(x / grid.width + .5) * (grid.columns - 1), (z / grid.depth + .5) * (grid.rows - 1)];
