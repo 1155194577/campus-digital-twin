@@ -8,6 +8,7 @@ import { ArrowDownToLine, ArrowUpRight, Box, Building2, Check, ChevronDown, Chev
 import { cuhkCampusMap, isTransitPlace, placeAliases, projectPlace, railwayEntranceSource, searchPlaces, universityExits, universityStation, universityStationMap } from "@/lib/campus-places";
 import type { CampusPlace } from "@/lib/campus-places";
 import { cuhkBuildingRegion, cuhkRegions, type CuhkRegion } from "@/lib/cuhk-regions";
+import { decodeCampusTerrain, type CampusTerrain } from "@/lib/campus-terrain";
 import { partColors } from "@/lib/types";
 import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 import { buildWalkingGraph, distance, findWalkingRoute, formatEndpoint, parseEndpoint } from "@/lib/walking-route";
@@ -55,6 +56,8 @@ export default function CampusApp() {
   const [layers,setLayers]=useState<Layers>({building:true,road:true,park:true,water:true});
   const [highlightedRegion,setHighlightedRegion]=useState<CuhkRegion|null>(null);
   const [view,setView]=useState<ViewMode>("perspective");
+  const [terrainEnabled,setTerrainEnabled]=useState(false);
+  const [terrainData,setTerrainData]=useState<{campus:Campus; grid:CampusTerrain}>();
   const [comparePrint,setComparePrint]=useState(false);
   const [action,setAction]=useState<ViewerAction|null>(null);
   const [tab,setTab]=useState<"explore"|"models">("explore");
@@ -103,6 +106,23 @@ export default function CampusApp() {
     return ()=>controller.abort();
   },[campusId, locationReady]);
   const activeCampus = campus?.id === campusId ? campus : null;
+  const terrainAvailable=tab==="explore"&&!modelFiles.length;
+  const terrain=terrainAvailable&&terrainEnabled&&terrainData&&terrainData.campus===activeCampus?terrainData.grid:undefined;
+  useEffect(()=>{
+    if (!terrainAvailable || comparePrint || !terrainEnabled || !activeCampus || terrain) return;
+    const controller=new AbortController();
+    fetch(`/data/${activeCampus.id}-terrain.bin`,{signal:controller.signal}).then(response=>{
+      if(!response.ok)throw new Error("Could not load terrain");
+      return response.arrayBuffer();
+    }).then(data=>{
+      if(!controller.signal.aborted)setTerrainData({campus:activeCampus,grid:decodeCampusTerrain(activeCampus.width,activeCampus.depth,data)});
+    }).catch(()=>{
+      if(controller.signal.aborted)return;
+      setTerrainEnabled(false);
+      setError("Terrain elevation could not be loaded. The flat map is still available.");
+    });
+    return ()=>controller.abort();
+  },[activeCampus,comparePrint,terrain,terrainAvailable,terrainEnabled]);
   const isCuhk=activeCampus?.id==="cuhk";
   const showTransit=isCuhk&&!planning;
   const selected=(showTransit?transitPlaces.find(f=>f.id===selectedId):null)??activeCampus?.features.find(f=>f.id===selectedId)??null;
@@ -293,6 +313,11 @@ export default function CampusApp() {
             </div>
             <button ref={directoryToggle} className="icon-button mobile-directory-toggle" aria-label="Open campus directory" aria-controls="campus-directory" aria-expanded={mobileDirectory} onClick={()=>setMobileDirectory(true)}><Layers3 size={18}/></button>
           </div>
+          {terrainAvailable&&!printMode&&<div className="terrain-controls">
+            <button type="button" className="secondary-button" aria-pressed={terrainEnabled} disabled={!activeCampus||loading} onClick={()=>setTerrainEnabled(enabled=>!enabled)}>Terrain elevation</button>
+            {terrainEnabled&&!terrain&&<span role="status">Loading terrain…</span>}
+            {terrain&&<a href="https://data.gov.hk/en-data/dataset/hk-landsd-openmap-5m-grid-dtm" target="_blank" rel="noreferrer">5 m DTM: Lands Department, HKSAR Government, via DATA.GOV.HK. © HKSAR Government and relevant organisations.</a>}
+          </div>}
           {showRegions&&<div className="college-regions" role="group" aria-label="CUHK building regions">
             <strong>Building regions</strong>
             <button type="button" aria-pressed={highlightedRegion===null} onClick={()=>highlightRegion(null)}>All regions</button>
@@ -304,7 +329,7 @@ export default function CampusApp() {
             {showPrint&&<PrintComparison campus={campus} layers={layers} selected={selected&&!isTransitPlace(selected)?selected:null}/>}
             <div className="campus-map-view" hidden={Boolean(showPrint)}>
               <div className="map-surface" ref={mapSurface}>
-                <CampusScene campus={loading?null:activeCampus} layers={layers} selected={planning?null:selected} scheduledBuildings={showTimetable?scheduledBuildings:undefined} colorRegions={showRegions} highlightedRegion={highlightedRegion} showTransit={showTransit&&tab==="explore"} onSelect={select} onMapPoint={!showPrint&&planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFiles={modelFiles} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready} onModelInfo={setModelInfo} onHeadingChange={showNorthHeading}/>
+                <CampusScene campus={loading?null:activeCampus} terrain={terrain} layers={layers} selected={planning?null:selected} scheduledBuildings={showTimetable?scheduledBuildings:undefined} colorRegions={showRegions} highlightedRegion={highlightedRegion} showTransit={showTransit&&tab==="explore"} onSelect={select} onMapPoint={!showPrint&&planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFiles={modelFiles} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready} onModelInfo={setModelInfo} onHeadingChange={showNorthHeading}/>
                 {(loading||!sceneReady)&&!error&&<div className="loading-overlay" role="status"><LoaderCircle className="spin" size={28}/><strong>{modelFiles.length?"Opening your model":"Bringing campus into focus"}</strong><span>Preparing your 3D view…</span></div>}
                 {error&&<div className="error-banner" role="alert"><Info size={17}/><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError("")}><X size={16}/></button></div>}
                 <div className="map-title"><span className="map-kicker">{modelFiles.length?"LOCAL MODEL":"CAMPUS DIGITAL TWIN"}</span><h2 id="map-title">{modelName??current.name}</h2><p className="map-subtitle">{modelFiles.length?"Your geometry. A different perspective.":campus?.subtitle}</p><p className="touch-hint">{view==="top"?"Drag to pan · Pinch to zoom":"Drag to orbit · Pinch to zoom · Two fingers to pan"}</p></div>
