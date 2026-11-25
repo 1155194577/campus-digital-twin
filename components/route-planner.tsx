@@ -24,6 +24,6 @@ export default function RoutePlanner({ start, destination, choosing, onChoose, o
         {route.offsets.some(offset => offset >= 1) && <p>Endpoint gaps, not included: A {Math.round(route.offsets[0])} m · B {Math.round(route.offsets[1])} m. Connections to the path are not verified.</p>}
       </> : estimate !== null && <p>No connected mapped path found near both points.</p>}
     </div>
-    <p className="route-limitations">Mapped data only, verify on site. The snapshot has no terrain or slope model, and may omit steps, crossings or tactile paving. This is not an accessibility-verified route.</p>
+    <p className="route-limitations">Mapped data only, verify on site. Routing does not account for terrain or slope. The snapshot may omit steps, crossings or tactile paving. This is not an accessibility-verified route.</p>
   </section>;
 }
