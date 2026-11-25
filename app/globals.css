@@ -176,4 +176,9 @@ dialog.modal-backdrop::backdrop{background:#1c302b66;backdrop-filter:blur(5px)}
   .campus-map-view:not([hidden]):has(.transit-card){grid-template-rows:minmax(240px,1fr) auto}
 }
 
+.terrain-controls{display:flex;align-items:center;gap:10px;flex-shrink:0;padding:6px 12px;border-bottom:1px solid var(--border);color:#4d5952;font-size:11px}
+.terrain-controls button{height:30px;flex-shrink:0}
+.terrain-controls button[aria-pressed="true"]{background:#edf3ff;border-color:#a9c8ff;color:#1d4b79}
+.terrain-controls a{text-decoration:underline;text-underline-offset:2px}
+@media(pointer:coarse){.terrain-controls button{min-height:44px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation-duration:.01ms!important;transition:none!important}}

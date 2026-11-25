@@ -8,8 +8,9 @@ import { TrainFront } from "lucide-react";
 import { isTransitPlace, projectPlace, universityStation } from "@/lib/campus-places";
 import type { CampusPlace, TransitPlace } from "@/lib/campus-places";
 import { partColors } from "@/lib/types";
-import type { Campus, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
+import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 import { campusFramePlanes, projectCampusFramePlane } from "@/lib/campus-frame";
+import { terrainHeight, terrainSegment, type CampusTerrain } from "@/lib/campus-terrain";
 import { createMapClickGesture } from "@/lib/map-click-gesture";
 import { cuhkBuildingRegion, cuhkRegions, type CuhkRegion } from "@/lib/cuhk-regions";
 
@@ -24,6 +25,7 @@ type SceneState = {
   view: ViewMode; perspectivePose?: CameraPose; topFrame?: CameraPose; campusBounds: THREE.Box3; modelBounds?: THREE.Box3;
   topSelectionTarget?: THREE.Vector3;
   updateTransitMarker?: () => void;
+  heightAt: (x: number, z: number) => number;
 };
 
 function getCameraPose(s: SceneState): CameraPose {
@@ -51,9 +53,64 @@ function fitTopView(s: SceneState) {
   s.invalidate();
 }
 
-function transitPosition(place: TransitPlace, campus: Campus) {
+function transitPosition(place: TransitPlace, campus: Campus, heightAt: SceneState["heightAt"]) {
   const [x, z] = projectPlace(place, campus.center);
-  return new THREE.Vector3(x, 2, z);
+  return new THREE.Vector3(x, heightAt(x, z) + 2, z);
+}
+
+function terrainGeometry(grid: CampusTerrain) {
+  const geometry = new THREE.PlaneGeometry(grid.width, grid.depth, grid.columns - 1, grid.rows - 1);
+  geometry.rotateX(-Math.PI / 2);
+  const positions = geometry.getAttribute("position");
+  grid.heights.forEach((height, i) => positions.setY(i, height));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function terrainSides(geometry: THREE.PlaneGeometry, grid: CampusTerrain, bottom: number) {
+  const { columns, rows } = grid;
+  const positions = geometry.getAttribute("position");
+  const sides: number[] = [];
+  const add = (a: number, b: number) => {
+    const ax = positions.getX(a), az = positions.getZ(a), bx = positions.getX(b), bz = positions.getZ(b);
+    const ay = positions.getY(a), by = positions.getY(b);
+    sides.push(ax, ay, az, bx, by, bz, ax, bottom, az, ax, bottom, az, bx, by, bz, bx, bottom, bz);
+  };
+  const south = (rows - 1) * columns;
+  for (let x = 0; x < columns - 1; x++) {
+    add(x, x + 1);
+    add(south + x + 1, south + x);
+  }
+  for (let z = 0; z < rows - 1; z++) {
+    const west = z * columns, east = west + columns - 1;
+    add(west + columns, west);
+    add(east, east + columns);
+  }
+  const result = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(sides, 3));
+  result.computeVertexNormals();
+  return result;
+}
+
+function terrainSurface(features: Feature[], grid: CampusTerrain, geometry: THREE.PlaneGeometry, kind: "park" | "water") {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(grid.width); canvas.height = Math.ceil(grid.depth);
+  const context = canvas.getContext("2d")!;
+  context.fillStyle = kind === "water" ? "#9dcbd1" : "#a6c7ae";
+  for (const { points } of features) {
+    context.beginPath();
+    points.forEach(([x, z], i) => {
+      const a = (x / grid.width + .5) * canvas.width, b = (z / grid.depth + .5) * canvas.height;
+      if (i === 0) context.moveTo(a, b);
+      else context.lineTo(a, b);
+    });
+    context.fill();
+  }
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+    map, alphaTest: .5, roughness: .85,
+    polygonOffset: true, polygonOffsetFactor: kind === "water" ? -2 : -1, polygonOffsetUnits: -1,
+  }));
 }
 function disposeObject(object: THREE.Object3D) {
   object.traverse(child => {
@@ -68,7 +125,7 @@ function disposeObject(object: THREE.Object3D) {
   });
 }
 
-function endpointMarker(point: Point, label: string, color: string, size: number) {
+function endpointMarker(point: Point, label: string, color: string, size: number, height: number) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 64;
   const context = canvas.getContext("2d")!;
@@ -85,7 +142,7 @@ function endpointMarker(point: Point, label: string, color: string, size: number
   context.textBaseline = "middle";
   context.fillText(label, 32, 33);
   const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, depthWrite: false, toneMapped: false }));
-  marker.position.set(point[0], 4, point[1]);
+  marker.position.set(point[0], height + 4, point[1]);
   marker.scale.setScalar(size);
   marker.renderOrder = 2;
   return marker;
@@ -119,8 +176,9 @@ function fitModel(s: SceneState, upAxis: UpAxis): ModelInfo | null {
   return { parts: pivot.children.length, triangles: Math.round(triangles), size: [size.x, size.z, size.y].map(v => v < maxSize * 1e-9 ? 0 : v) as ModelInfo["size"] };
 }
 
-export default function CampusScene({ campus, layers, selected, scheduledBuildings, colorRegions, highlightedRegion, showTransit, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFiles, upAxis, active, onError, onModelError, onReady, onModelInfo, onHeadingChange }: {
+export default function CampusScene({ campus, terrain, layers, selected, scheduledBuildings, colorRegions, highlightedRegion, showTransit, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFiles, upAxis, active, onError, onModelError, onReady, onModelInfo, onHeadingChange }: {
   campus: Campus; layers: Layers; selected: CampusPlace | null; showTransit: boolean; onSelect: (f: CampusPlace | null) => void;
+  terrain?: CampusTerrain;
   scheduledBuildings?: ReadonlySet<string>;
   colorRegions: boolean; highlightedRegion: CuhkRegion | null;
   onMapPoint?: (point: Point) => void; routeStart?: Point; routeDestination?: Point; routePath?: Point[];
@@ -156,10 +214,12 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
     renderer.domElement.setAttribute("aria-describedby", "scene-keyboard-help");
     const scene = new THREE.Scene();
     const span = Math.max(campus.width, campus.depth);
+    const heightAt = terrain ? (x: number, z: number) => terrainHeight(terrain, x, z) : () => 0;
     const camera = new THREE.PerspectiveCamera(38, 1, 1, span * 14);
-    const initial = new THREE.Vector3(span * .58, span * .9, span * .82);
+    const initial = new THREE.Vector3(span * .58, span * .9 + heightAt(0, 0), span * .82);
     camera.position.copy(initial);
     const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.y = heightAt(0, 0);
     controls.listenToKeyEvents(renderer.domElement);
     controls.keyRotateSpeed = 12;
     const projectedTarget = new THREE.Vector3();
@@ -188,15 +248,23 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
     const clippingPlanes = [...framePlanes];
     const groundTop = -1;
     const groundThickness = 8;
-    const ground = new THREE.Mesh(new THREE.BoxGeometry(campus.width, groundThickness, campus.depth), new THREE.MeshStandardMaterial({ color: "#dce8dc", roughness: 1 }));
-    ground.position.y = groundTop - groundThickness / 2; scene.add(ground);
+    const relief = terrain && terrainGeometry(terrain);
+    const ground = new THREE.Mesh(relief || new THREE.BoxGeometry(campus.width, groundThickness, campus.depth), new THREE.MeshStandardMaterial({ color: "#dce8dc", roughness: 1 }));
+    if (!terrain) ground.position.y = groundTop - groundThickness / 2;
+    scene.add(ground);
     const campusBounds = new THREE.Box3().setFromObject(ground);
-    const groundEdge = new THREE.LineSegments(new THREE.EdgesGeometry(ground.geometry), new THREE.LineBasicMaterial({ color: "#bed0c7", transparent: true, opacity: .6 }));
-    groundEdge.position.copy(ground.position); scene.add(groundEdge);
+    if (terrain && relief) {
+      const skirt = terrainSides(relief, terrain, campusBounds.min.y - groundThickness);
+      scene.add(new THREE.Mesh(skirt, new THREE.MeshStandardMaterial({ color: "#bfd0c5", roughness: 1 })));
+    } else {
+      const groundEdge = new THREE.LineSegments(new THREE.EdgesGeometry(ground.geometry), new THREE.LineBasicMaterial({ color: "#bed0c7", transparent: true, opacity: .6 }));
+      groundEdge.position.copy(ground.position); scene.add(groundEdge);
+    }
     const buildings: THREE.Mesh[] = [];
     const roads = new Map<string, THREE.BufferGeometry[]>();
     const outlines: THREE.BufferGeometry[] = [];
     const surfaces = { park: [] as THREE.BufferGeometry[], water: [] as THREE.BufferGeometry[] };
+    const terrainSurfaces = { park: [] as Feature[], water: [] as Feature[] };
     for (const feature of campus.features) {
       const points = feature.points;
       if (points.length < 2) continue;
@@ -208,18 +276,38 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
       }
       if (feature.kind === "road") {
         const color = feature.category === "footway" || feature.category === "path" ? "#fefcf4" : "#bdc8c7";
-        const positions = new Float32Array((points.length - 1) * 6);
+        const positions: number[] = [];
         for (let i = 1; i < points.length; i++) {
-          positions.set([points[i-1][0], .9, points[i-1][1], points[i][0], .9, points[i][1]], (i - 1) * 6);
+          const edge = terrain ? terrainSegment(terrain, points[i - 1], points[i]) : [points[i - 1], points[i]];
+          for (let j = 1; j < edge.length; j++) {
+            const [x, z] = edge[j - 1], [endX, endZ] = edge[j];
+            positions.push(x, heightAt(x, z) + .9, z, endX, heightAt(endX, endZ) + .9, endZ);
+          }
         }
         const segments = roads.get(color) ?? [];
-        segments.push(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(positions, 3)));
+        segments.push(new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)));
         roads.set(color, segments);
+        continue;
+      }
+      if (terrain && feature.kind !== "building") {
+        terrainSurfaces[feature.kind].push(feature);
         continue;
       }
       const shape = new THREE.Shape(points.map(p => new THREE.Vector2(p[0], -p[1])));
       const height = feature.kind === "building" ? feature.height : .4;
-      const geometry = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false });
+      let base = 1, foundation = 0;
+      if (terrain) {
+        let low = Infinity, high = -Infinity;
+        for (let i = 1; i < points.length; i++) {
+          for (const point of terrainSegment(terrain, points[i - 1], points[i])) {
+            const y = heightAt(...point);
+            low = Math.min(low, y); high = Math.max(high, y);
+          }
+        }
+        base = low - 1;
+        foundation = high - base;
+      }
+      const geometry = new THREE.ExtrudeGeometry(shape, { depth: height + foundation, bevelEnabled: false });
       geometry.rotateX(-Math.PI / 2);
       if (feature.kind !== "building") {
         surfaces[feature.kind].push(geometry.translate(0, feature.kind === "water" ? -.3 : .15, 0));
@@ -227,8 +315,8 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
       }
       const color = feature.name ? "#d3dce0" : "#e1e6e4";
       const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: .85, metalness: .02, clippingPlanes }));
-      mesh.position.y = 1;
-      campusBounds.max.y = Math.max(campusBounds.max.y, height + mesh.position.y);
+      mesh.position.y = base;
+      campusBounds.max.y = Math.max(campusBounds.max.y, height + foundation + base);
       mesh.userData = { feature, baseColor: color, region: campus.id === "cuhk" ? cuhkBuildingRegion(feature) : null };
       groups[feature.kind].add(mesh);
       buildings.push(mesh);
@@ -243,6 +331,9 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
       outlines.forEach(geometry => geometry.dispose());
     }
     for (const kind of ["park", "water"] as const) {
+      if (terrain && relief && terrainSurfaces[kind].length) {
+        groups[kind].add(terrainSurface(terrainSurfaces[kind], terrain, relief, kind));
+      }
       const geometries = surfaces[kind];
       if (!geometries.length) continue;
       const color = kind === "water" ? "#9dcbd1" : "#a6c7ae";
@@ -268,7 +359,7 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
         frame = undefined;
       }
     };
-    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial, invalidate, setActive, view: "perspective", campusBounds };
+    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial, invalidate, setActive, view: "perspective", campusBounds, heightAt };
     function render() {
       if (sceneState.focus) {
         const delta = sceneState.focus.clone().sub(controls.target).multiplyScalar(.12);
@@ -277,7 +368,7 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
       }
       const moved = controls.update();
       if (dirty || moved) {
-        if (sceneState.view === "top") {
+        if (sceneState.view === "top" && !terrain) {
           framePlanes.forEach((plane, i) => projectCampusFramePlane(plane, groundTop, camera.position, projectedPlanes[i]));
           if (clippingPlanes.length === framePlanes.length) clippingPlanes.push(...projectedPlanes);
         } else {
@@ -321,8 +412,9 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
         .find(({ point }) => clippingPlanes.every(plane => plane.distanceToPoint(point) >= 0)) : null;
       if (hit) callbacks.current.onSelect(hit.object.userData.feature);
       else if (callbacks.current.onMapPoint) {
-        const ground = raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
-        if (ground && framePlanes.every(plane => plane.distanceToPoint(ground) >= 0)) callbacks.current.onMapPoint([ground.x, ground.z]);
+        const point = terrain ? raycaster.intersectObject(ground, false)[0]?.point
+          : raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+        if (point && framePlanes.every(plane => plane.distanceToPoint(point) >= 0)) callbacks.current.onMapPoint([point.x, point.z]);
       } else callbacks.current.onSelect(null);
     };
     renderer.domElement.addEventListener("pointerdown", gesture.down);
@@ -339,21 +431,21 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
       renderer.domElement.removeEventListener("pointercancel",gesture.cancel);
       renderer.domElement.removeEventListener("pointermove",move);
       renderer.domElement.removeEventListener("webglcontextlost",lost);
-      disposeObject(scene); renderer.dispose(); host.removeChild(renderer.domElement); state.current=null;
+      disposeObject(scene); renderer.dispose(); renderer.forceContextLoss(); host.removeChild(renderer.domElement); state.current=null;
     };
-  }, [campus]);
+  }, [campus, terrain]);
 
-  useEffect(() => { state.current?.setActive(active); }, [active, campus]);
+  useEffect(() => { state.current?.setActive(active); }, [active, campus, terrain]);
   useEffect(() => {
     const s=state.current; if(!s)return;
     for(const key of Object.keys(layers) as (keyof Layers)[]) s.groups[key].visible=layers[key] && !modelFiles.length;
     s.invalidate();
-  }, [layers, campus, modelFiles]);
+  }, [layers, campus, modelFiles, terrain]);
   useEffect(() => {
     const s = state.current;
     const node = transitMarker.current;
     if (!s || !node || !marker) return;
-    const point = transitPosition(marker, campus);
+    const point = transitPosition(marker, campus, s.heightAt);
     const screen = new THREE.Vector3();
     s.updateTransitMarker = () => {
       screen.copy(point).project(s.camera);
@@ -365,7 +457,7 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
     };
     s.invalidate();
     return () => { s.updateTransitMarker = undefined; };
-  }, [campus, marker]);
+  }, [campus, marker, terrain]);
   useEffect(() => {
     const s = state.current; if(!s)return;
     for(const mesh of s.buildings) {
@@ -379,18 +471,22 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
       material.emissive.set(isSelected ? "#092649" : "#000000");
     }
     s.invalidate();
-  }, [selected,campus,scheduledBuildings,colorRegions,highlightedRegion]);
+  }, [selected,campus,scheduledBuildings,colorRegions,highlightedRegion,terrain]);
   useEffect(() => {
     const s = state.current; if(!s)return;
     if (!selected) s.focus = undefined;
-    else if (isTransitPlace(selected)) s.focus = transitPosition(selected, campus);
-    else s.focus = new THREE.Vector3(selected.points.reduce((a,p)=>a+p[0],0)/selected.points.length,0,selected.points.reduce((a,p)=>a+p[1],0)/selected.points.length);
+    else if (isTransitPlace(selected)) s.focus = transitPosition(selected, campus, s.heightAt);
+    else {
+      const x = selected.points.reduce((a,p)=>a+p[0],0)/selected.points.length;
+      const z = selected.points.reduce((a,p)=>a+p[1],0)/selected.points.length;
+      s.focus = new THREE.Vector3(x,s.heightAt(x,z),z);
+    }
     if (s.view === "top") {
       const selectedMesh = selected && s.buildings.find(mesh => mesh.userData.feature.id === selected.id);
       s.topSelectionTarget = selectedMesh ? new THREE.Box3().setFromObject(selectedMesh).getCenter(new THREE.Vector3()) : s.focus?.clone();
     }
     s.invalidate();
-  }, [selected,campus]);
+  }, [selected,campus,terrain]);
   useEffect(() => {
     const s=state.current; if(!s)return;
     const distance=s.camera.position.distanceTo(s.controls.target);
@@ -422,7 +518,7 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
     } else s.camera.position.copy(s.controls.target).add(new THREE.Vector3(.5,.72,.65).normalize().multiplyScalar(distance));
     s.controls.update();
     s.invalidate();
-  },[view,campus]);
+  },[view,campus,terrain]);
   useEffect(() => {
     const s = state.current;
     if (!s) return;
@@ -431,18 +527,22 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
     s.invalidate();
     if (modelFiles.length) return;
     const size = s.span * .032;
-    if (routeStart) s.route.add(endpointMarker(routeStart, "A", "#073f75", size));
-    if (routeDestination) s.route.add(endpointMarker(routeDestination, "B", "#841d51", size));
+    if (routeStart) s.route.add(endpointMarker(routeStart, "A", "#073f75", size, s.heightAt(...routeStart)));
+    if (routeDestination) s.route.add(endpointMarker(routeDestination, "B", "#841d51", size, s.heightAt(...routeDestination)));
     if (routePath && routePath.length > 1) {
       const positions: number[] = [];
       const halfWidth = s.span * .0022;
-      for (let i = 1; i < routePath.length; i++) {
-        const [x, z] = routePath[i - 1];
-        const [endX, endZ] = routePath[i];
+      const addVertex = (x: number, z: number) => positions.push(x, s.heightAt(x, z) + 3, z);
+      const addStrip = ([x, z]: Point, [endX, endZ]: Point) => {
         const length = Math.hypot(endX - x, endZ - z);
+        if (!length) return;
         const dx = (endZ - z) / length * halfWidth, dz = (x - endX) / length * halfWidth;
-        positions.push(x + dx, 3, z + dz, endX + dx, 3, endZ + dz, endX - dx, 3, endZ - dz,
-          x + dx, 3, z + dz, endX - dx, 3, endZ - dz, x - dx, 3, z - dz);
+        addVertex(x + dx, z + dz); addVertex(endX + dx, endZ + dz); addVertex(endX - dx, endZ - dz);
+        addVertex(x + dx, z + dz); addVertex(endX - dx, endZ - dz); addVertex(x - dx, z - dz);
+      };
+      for (let i = 1; i < routePath.length; i++) {
+        const edge = terrain ? terrainSegment(terrain, routePath[i - 1], routePath[i]) : [routePath[i - 1], routePath[i]];
+        for (let j = 1; j < edge.length; j++) addStrip(edge[j - 1], edge[j]);
       }
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
@@ -450,12 +550,12 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
       path.renderOrder = 1;
       s.route.add(path);
     }
-  }, [campus, modelFiles, routeStart, routeDestination, routePath]);
+  }, [campus, modelFiles, routeStart, routeDestination, routePath, terrain]);
   useEffect(() => {
     const s = state.current;
     if (!s || !routeStart || !routeDestination || modelFiles.length) return;
     const points = [routeStart, routeDestination, ...(routePath ?? [])];
-    const box = new THREE.Box3().setFromPoints(points.map(([x, z]) => new THREE.Vector3(x, 0, z)));
+    const box = new THREE.Box3().setFromPoints(points.map(([x, z]) => new THREE.Vector3(x, s.heightAt(x, z), z)));
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const radius = Math.max(110, Math.hypot(size.x, size.z) * .6) / (Math.tan(THREE.MathUtils.degToRad(s.camera.fov / 2)) * Math.min(1, s.camera.aspect));
@@ -465,11 +565,11 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
     s.camera.position.copy(center).add(offset);
     s.controls.update();
     s.invalidate();
-  }, [campus, modelFiles, routeStart, routeDestination, routePath, view]);
+  }, [campus, modelFiles, routeStart, routeDestination, routePath, view, terrain]);
   useEffect(()=>{
     const s=state.current; if(!s||!action||lastAction.current===action)return;
     lastAction.current=action;
-    if(action.type==="reset") {s.controls.target.set(0,0,0); s.camera.position.copy(s.initial); s.focus=undefined;}
+    if(action.type==="reset") {s.controls.target.set(0,s.heightAt(0,0),0); s.camera.position.copy(s.initial); s.focus=undefined;}
     if(action.type==="zoomIn"||action.type==="zoomOut") {
       const offset=s.camera.position.clone().sub(s.controls.target).multiplyScalar(action.type==="zoomIn"?.75:1.3);
       offset.clampLength(s.controls.minDistance,s.controls.maxDistance); s.camera.position.copy(s.controls.target).add(offset);
@@ -477,7 +577,7 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
     if(action.type==="focus"&&selected) {
       const transit=isTransitPlace(selected);
       const mesh=transit?null:s.buildings.find(m=>m.userData.feature.id===selected.id);
-      const center=transit?transitPosition(selected,campus):mesh?new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()):null;
+      const center=transit?transitPosition(selected,campus,s.heightAt):mesh?new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()):null;
       if(center) {
         const offset=transit?s.camera.position.clone().sub(s.controls.target).setLength(255):new THREE.Vector3(130,150,160);
         s.controls.target.copy(center);s.camera.position.copy(center).add(offset);s.focus=undefined;
@@ -526,7 +626,7 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
     };
     void load();
     return ()=>{cancelled=true;disposeObject(s.model);s.model.clear();};
-  },[modelFiles,campus]);
+  },[modelFiles,campus,terrain]);
   useEffect(()=>{ upAxisRef.current=upAxis; const s=state.current; if(s?.model.children.length) callbacks.current.onModelInfo(fitModel(s,upAxis)); },[upAxis]);
   return <>
     <div className="scene-canvas" ref={container}/>

@@ -61,6 +61,20 @@ python3 scripts/prepare_campuses.py hkstp.osm cuhk.osm
 
 Local 3D files are processed in the browser and never uploaded. Models are normalized to fit the viewer; display scale is not a physical measurement. GLBs must embed their resources; external-resource loading is blocked. The existing [map-generation](https://github.com/1155194577/py-touch-mapper-hk) and [3D-print](https://github.com/1155194577/3d-print) projects are linked for context, not connected as services.
 
+### Campus terrain elevation
+
+The `/explore` map starts flat. Turn on **Terrain elevation** to view HKSTP or CUHK on the Hong Kong Lands Department's [5 m Digital Terrain Model](https://data.gov.hk/en-data/dataset/hk-landsd-openmap-5m-grid-dtm). Elevations are in metres above Hong Kong Principal Datum and are shown without vertical exaggeration. The DTM has a stated vertical accuracy of ±5 m at 90% confidence and can include elevated roads, bridges and vegetation. Building dimensions are still from OpenStreetMap or estimated; building foundations, roads and paths are placed using the terrain, not surveyed feature elevations.
+
+Elevation data: Lands Department, Government of the Hong Kong Special Administrative Region, via DATA.GOV.HK. © Government of the Hong Kong Special Administrative Region and the relevant organisations. Licensed under the [DATA.GOV.HK Terms of Use](https://data.gov.hk/en/terms-and-conditions); see [DATA-LICENSE.md](DATA-LICENSE.md).
+
+The app downloads only its bundled campus grid on demand. To regenerate, download [the official LandsD ZIP](https://www.landsd.gov.hk/landsd_psi_data/SMO/data/Whole_HK_DTM_5m.zip), install NumPy 2.2.6 and pyproj 3.7.1 in a Python environment, then run:
+
+```sh
+python scripts/prepare_terrain.py /path/to/Whole_HK_DTM_5m.zip
+```
+
+The script resamples Hong Kong 1980 Grid (EPSG:2326) data to the campus map's local coordinates at about 5 m spacing and writes signed little-endian decimetres, row-major from the north-west corner. The grids are 228 × 224 (102,144 bytes) for HKSTP and 354 × 412 (291,696 bytes) for CUHK.
+
 ### CUHK course timetable
 
 The timetable uses the [November 2026 CUHK course-data snapshot](https://github.com/cutopia-labs/cuhk-course-data/tree/427933d410e071917791b246fe1a17012e481e93). It is not a live feed. The generated file contains only course codes and titles, terms, sections, venues, and dated meeting times; unscheduled meetings and those without a venue are omitted. Unmatched venues remain searchable without a building highlight.
