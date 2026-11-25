@@ -391,7 +391,7 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
       const pointer = new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);
       if (!callbacks.current.onMapPoint) {
         // Resolve the zoom point on the first tap; a selection flight may move the camera before the second.
-        if (doubleTap.tap(event)) { if (tapPoint) zoomAt(tapPoint); tapPoint = null; return; }
+        if (doubleTap.tap(event)) { const point = tapPoint ?? zoomPoint(pointer); if (point) zoomAt(point); tapPoint = null; return; }
         tapPoint = zoomPoint(pointer);
       }
       if (model.children.length) return;
