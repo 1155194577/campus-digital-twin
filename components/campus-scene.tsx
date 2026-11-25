@@ -486,7 +486,7 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
       flyTo(s, { target: center.clone(), position: position.clone().sub(target).add(center) });
       s.topSelectionTarget = undefined;
       s.perspectivePose = undefined;
-    } else flyTo(s, { target: s.controls.target.clone(), position: s.controls.target.clone().add(new THREE.Vector3(.5,.72,.65).normalize().multiplyScalar(distance)) });
+    } else if (!s.flight) flyTo(s, { target: s.controls.target.clone(), position: s.controls.target.clone().add(new THREE.Vector3(.5,.72,.65).normalize().multiplyScalar(distance)) });
   },[view,campus]);
   useEffect(() => {
     const s = state.current; if (!s) return;
