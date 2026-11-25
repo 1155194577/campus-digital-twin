@@ -12,6 +12,10 @@ The included conversion script records each snapshot retrieval time in `fetchedA
 
 The tactile reference images in `public/data/*-print.webp` also derive from OpenStreetMap, via Touch Mapper. The attribution above applies to both comparison panels and to the Campus Atlas renders in `public/showcase/`.
 
+## Terrain elevation
+
+The campus terrain grids (`public/data/*-terrain.bin`) are resampled from the [5 m Digital Terrain Model](https://data.gov.hk/en-data/dataset/hk-landsd-openmap-5m-grid-dtm), separate from the OpenStreetMap snapshots. Source: Lands Department, Government of the Hong Kong Special Administrative Region, via DATA.GOV.HK. © Government of the Hong Kong Special Administrative Region and the relevant organisations. The source and grids are subject to the [DATA.GOV.HK Terms of Use](https://data.gov.hk/en/terms-and-conditions).
+
 ## CUHK directory supplements
 
 - [University Station](https://www.openstreetmap.org/node/5098496689) is an OpenStreetMap point and uses the same ODbL attribution.
