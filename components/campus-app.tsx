@@ -9,13 +9,14 @@ import { cuhkCampusMap, isTransitPlace, placeAliases, projectPlace, railwayEntra
 import type { CampusPlace } from "@/lib/campus-places";
 import { cuhkBuildingRegion, cuhkRegions, type CuhkRegion } from "@/lib/cuhk-regions";
 import { decodeCampusTerrain, type CampusTerrain } from "@/lib/campus-terrain";
+import { combineCampuses, combinedCampusId, combinedSourceIds } from "@/lib/combined-campus";
 import { partColors } from "@/lib/types";
 import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 import { buildWalkingGraph, distance, findWalkingRoute, formatEndpoint, parseEndpoint } from "@/lib/walking-route";
 import { formatBounds, tactileArea, tactileCommand, tactileGeoJson } from "@/lib/tactile-area";
 import RoutePlanner, { type EndpointSlot } from "./route-planner";
 import CourseTimetable from "./course-timetable";
-import PrintComparison from "./print-comparison";
+import PrintComparison, { hasPrintReference } from "./print-comparison";
 import TactileHandoff from "./tactile-handoff";
 
 type SceneProps = ComponentProps<typeof import("./campus-scene").default>;
@@ -27,7 +28,8 @@ const CampusScene = dynamic(async () => {
 }, { ssr: false });
 const formatSize = (value: number) => value.toLocaleString("en-GB", value < 100 ? { maximumSignificantDigits: 3 } : { maximumFractionDigits: 0 });
 const initialCampusId = "hkstp";
-const campuses = [{id:"hkstp",short:"HKSTP",name:"Hong Kong Science Park",tag:"Science & innovation"},{id:"cuhk",short:"CUHK",name:"The Chinese University of Hong Kong",tag:"Education & research"}];
+const campuses = [{id:"hkstp",short:"HKSTP",label:"HKSTP campus",name:"Hong Kong Science Park",tag:"Science & innovation"},{id:"cuhk",short:"CUHK",label:"CUHK campus",name:"The Chinese University of Hong Kong",tag:"Education & research"},{id:combinedCampusId,short:"HKSTP + CUHK",label:"HKSTP + CUHK combined",name:"Hong Kong Science Park and CUHK",tag:"Joined view"}];
+const loadCampus = (id:string, signal:AbortSignal):Promise<Campus> => fetch(`/data/${id}.json`,{signal}).then(r=>{if(!r.ok)throw new Error("Campus data could not be loaded. Please try again.");return r.json();});
 const layerOptions = [{key:"building",name:"Buildings",icon:Building2,color:"#b7c7cd"},{key:"road",name:"Roads & pathways",icon:Map,color:"#c2c9c3"},{key:"park",name:"Green spaces",icon:Leaf,color:"#92b79d"},{key:"water",name:"Water bodies",icon:Waves,color:"#8abcc6"}] as const;
 const transitPlaces = [universityStation,...universityExits];
 const regionKeys = Object.keys(cuhkRegions) as CuhkRegion[];
@@ -59,6 +61,7 @@ export default function CampusApp() {
   const [terrainEnabled,setTerrainEnabled]=useState(false);
   const [terrainData,setTerrainData]=useState<{campus:Campus; grid:CampusTerrain}>();
   const [comparePrint,setComparePrint]=useState(false);
+  useEffect(()=>{ if(!hasPrintReference(campusId)) setComparePrint(false); },[campusId]);
   const [action,setAction]=useState<ViewerAction|null>(null);
   const [tab,setTab]=useState<"explore"|"models">("explore");
   const [modelFiles,setModelFiles]=useState<File[]>([]);
@@ -102,7 +105,7 @@ export default function CampusApp() {
     if (!locationReady) return;
     const controller=new AbortController();
     setCampus(null);setLoading(true);setSceneReady(false);setError("");setQuery("");setModelFiles([]);setAction(null);
-    fetch(`/data/${campusId}.json`,{signal:controller.signal}).then(r=>{if(!r.ok)throw new Error("Campus data could not be loaded. Please try again.");return r.json();}).then(data=>{setCampus(data);setLoading(false);}).catch(e=>{if(e.name!=="AbortError"){setError(e.message);setLoading(false);}});
+    (campusId===combinedCampusId?Promise.all(combinedSourceIds.map(id=>loadCampus(id,controller.signal))).then(combineCampuses):loadCampus(campusId,controller.signal)).then(data=>{setCampus(data);setLoading(false);}).catch(e=>{if(e.name!=="AbortError"){setError(e.message);setLoading(false);}});
     return ()=>controller.abort();
   },[campusId, locationReady]);
   const activeCampus = campus?.id === campusId ? campus : null;
@@ -244,7 +247,8 @@ export default function CampusApp() {
   const showTactile=tab==="explore"&&tactileOpen&&!!area;
   const showTimetable=tab==="explore"&&isCuhk&&timetableOpen&&!planning;
   const current=campuses.find(c=>c.id===campusId)!;
-  const printMode=comparePrint&&tab==="explore";
+  const printAvailable=hasPrintReference(campusId);
+  const printMode=comparePrint&&tab==="explore"&&printAvailable;
   const showPrint=printMode&&campus&&!loading;
   const showRegions=isCuhk&&tab==="explore"&&!printMode&&!modelFiles.length;
   const highlightRegion=(region:CuhkRegion|null)=>{
@@ -272,7 +276,7 @@ export default function CampusApp() {
       <div className={`main-workspace ${(planning&&tab==="explore")||showTactile||showTimetable?"planning-workspace":""}`}>
         <section id="campus-directory" className={`directory ${mobileDirectory?"mobile-open":""}`} aria-label="Campus directory">
           <div className="directory-heading"><span className="section-label">WORKSPACE</span><button className="icon-button mobile-close" onClick={()=>setMobileDirectory(false)} aria-label="Close directory"><X size={17}/></button></div>
-          <div className="campus-select"><span className="campus-icon"><Building2 size={21}/></span><div><label htmlFor="campus">Campus location</label><div className="select-wrap"><select id="campus" value={campusId} onChange={e=>{setCampusId(e.target.value);setSelectedId(null);setHighlightedRegion(null);clearRoute();}} aria-label="Campus location">{campuses.map(c=><option key={c.id} value={c.id}>{c.short} campus</option>)}</select><ChevronDown size={14}/></div></div></div>
+          <div className="campus-select"><span className="campus-icon"><Building2 size={21}/></span><div><label htmlFor="campus">Campus location</label><div className="select-wrap"><select id="campus" value={campusId} onChange={e=>{setCampusId(e.target.value);setSelectedId(null);setHighlightedRegion(null);clearRoute();}} aria-label="Campus location">{campuses.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select><ChevronDown size={14}/></div></div></div>
           <div className="directory-tabs"><button className={tab==="explore"?"selected":""} aria-pressed={tab==="explore"} onClick={()=>{setTab("explore");setModelFiles([]);}}>Explore campus</button><button className={tab==="models"?"selected":""} aria-pressed={tab==="models"} onClick={()=>setTab("models")}>My models</button></div>
           {tab==="explore"?<>
             <div className="layer-heading"><h2>Map layers</h2><SlidersHorizontal size={15}/></div>
@@ -309,7 +313,7 @@ export default function CampusApp() {
             <div className="view-switch" role="group" aria-label="Map view">
               <button className={!printMode&&view==="perspective"?"selected":""} aria-pressed={!printMode&&view==="perspective"} onClick={()=>{setComparePrint(false);setView("perspective");}}><Box size={14}/>3D</button>
               <button className={!printMode&&view==="top"?"selected":""} aria-pressed={!printMode&&view==="top"} onClick={()=>{setComparePrint(false);setView("top");}}><Map size={14}/>Top</button>
-              {tab==="explore"&&<button className={printMode?"selected":""} aria-pressed={printMode} disabled={!campus||loading} onClick={()=>setComparePrint(true)}>Compare print</button>}
+              {tab==="explore"&&printAvailable&&<button className={printMode?"selected":""} aria-pressed={printMode} disabled={!campus||loading} onClick={()=>setComparePrint(true)}>Compare print</button>}
             </div>
             <button ref={directoryToggle} className="icon-button mobile-directory-toggle" aria-label="Open campus directory" aria-controls="campus-directory" aria-expanded={mobileDirectory} onClick={()=>setMobileDirectory(true)}><Layers3 size={18}/></button>
           </div>

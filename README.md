@@ -29,7 +29,7 @@ No API keys, database, backend service or pre-commit hooks are required.
 ## Features
 
 - Real OpenStreetMap building footprints, roads, green spaces and water.
-- HKSTP and CUHK campus switching, bilingual building-name search and inspection.
+- HKSTP and CUHK campus switching, plus a combined HKSTP + CUHK view that joins both snapshots on one ground, with bilingual building-name search and inspection.
 - CUHK course timetable by date, Hong Kong time, and building or venue, with mapped buildings highlighted.
 - A shareable walking-plan estimate using selected features or map points. The mapped path can include steps or crossings, and is not accessibility-verified.
 - Three.js orbit, pan, zoom, focus, reset, top-down view and layer visibility.
@@ -73,7 +73,7 @@ The app downloads only its bundled campus grid on demand. To regenerate, downloa
 python scripts/prepare_terrain.py /path/to/Whole_HK_DTM_5m.zip
 ```
 
-The script resamples Hong Kong 1980 Grid (EPSG:2326) data to the campus map's local coordinates at about 5 m spacing and writes signed little-endian decimetres, row-major from the north-west corner. The grids are 228 × 224 (102,144 bytes) for HKSTP and 354 × 412 (291,696 bytes) for CUHK.
+The script resamples Hong Kong 1980 Grid (EPSG:2326) data to the campus map's local coordinates at about 5 m spacing and writes signed little-endian decimetres, row-major from the north-west corner. The grids are 228 × 224 (102,144 bytes) for HKSTP, 354 × 412 (291,696 bytes) for CUHK, and 372 × 469 (348,936 bytes) for the combined view, which covers the union of both snapshot bounds (114.198, 22.410, 114.216, 22.431).
 
 ### CUHK course timetable
 

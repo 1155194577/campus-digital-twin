@@ -9,6 +9,7 @@ const references = {
   hkstp: { bounds: [114.20745, 22.4228, 114.2151, 22.42955], width: 196.8, depth: 187.9, scale: "4,000", image: hkstpPrint },
   cuhk: { bounds: [114.1987, 22.41165, 114.21515, 22.42845], width: 178.2, depth: 196.9, scale: "9,500", image: cuhkPrint },
 };
+export const hasPrintReference = (campusId: string) => campusId in references;
 const pointsAttr = (points: Point[]) => points.map(point => point.join(",")).join(" ");
 const fills = { building: "#70838b", park: "#c5d7b5", water: "#a1cbd5" };
 const drawOrder = ["park", "water", "road", "building"] as const;

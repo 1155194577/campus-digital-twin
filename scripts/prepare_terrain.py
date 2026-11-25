@@ -18,10 +18,22 @@ CELL_SIZE = 5
 METRES_PER_DEGREE = 111320
 
 
-def campus_grid(raster_path, campus_id):
+# Must match combinedBounds in lib/combined-campus.ts (west, south, east, north).
+COMBINED_BOUNDS = (114.198, 22.410, 114.216, 22.431)
+
+
+def campus_frame(campus_id):
+    if campus_id == "combined":
+        west, south, east, north = COMBINED_BOUNDS
+        lat, lon = (south + north) / 2, (west + east) / 2
+        width = round((east - west) * METRES_PER_DEGREE * math.cos(math.radians(lat)))
+        return width, round((north - south) * METRES_PER_DEGREE), lat, lon
     campus = json.loads((DATA / f"{campus_id}.json").read_text())
-    width, depth = campus["width"], campus["depth"]
-    lat, lon = campus["center"]
+    return campus["width"], campus["depth"], *campus["center"]
+
+
+def campus_grid(raster_path, campus_id):
+    width, depth, lat, lon = campus_frame(campus_id)
     x, z = np.meshgrid(
         np.linspace(-width / 2, width / 2, math.ceil(width / CELL_SIZE) + 1),
         np.linspace(-depth / 2, depth / 2, math.ceil(depth / CELL_SIZE) + 1),
@@ -65,5 +77,5 @@ def campus_grid(raster_path, campus_id):
 
 
 if __name__ == "__main__":
-    for ident in ("hkstp", "cuhk"):
+    for ident in ("hkstp", "cuhk", "combined"):
         campus_grid(sys.argv[1], ident)
