@@ -517,7 +517,7 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       raycaster.setFromCamera(pointer, camera);
       const hit = model.children.length ? raycaster.intersectObject(model, true)[0]
         : pickCampusSurface(raycaster, groups.building.visible ? buildings : [], clippingPlanes, terrain ? ground : undefined, terrainOutlineClipped);
-      return hit?.point ?? (terrain && !model.children.length ? null : raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3()));
+      return hit?.point ?? raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
     };
     const zoomAt = (hit: THREE.Vector3) => {
       const base = sceneState.flight?.to ?? getCameraPose(sceneState);
