@@ -23,3 +23,15 @@ export function createMapClickGesture() {
     },
   };
 }
+
+export function createDoubleTapDetector(maxDelay = 320, maxDistance = 24) {
+  let last: { time: number; x: number; y: number } | null = null;
+  return {
+    tap(pointer: { clientX: number; clientY: number; timeStamp: number }) {
+      const double = last !== null && pointer.timeStamp - last.time <= maxDelay &&
+        Math.hypot(pointer.clientX - last.x, pointer.clientY - last.y) <= maxDistance;
+      last = double ? null : { time: pointer.timeStamp, x: pointer.clientX, y: pointer.clientY };
+      return double;
+    },
+  };
+}

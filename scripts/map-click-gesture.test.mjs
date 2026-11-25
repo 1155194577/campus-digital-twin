@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createMapClickGesture } from "../lib/map-click-gesture.ts";
+import { createDoubleTapDetector, createMapClickGesture } from "../lib/map-click-gesture.ts";
 
 const pointer = (pointerId, clientX = 0, clientY = 0, button = 0) => ({ pointerId, clientX, clientY, button });
 
@@ -32,4 +32,14 @@ test("rejects a drag that returns to its starting point and non-primary clicks",
   assert.equal(gesture.up(pointer(1)), false);
   gesture.down(pointer(1, 0, 0, 2));
   assert.equal(gesture.up(pointer(1)), false);
+});
+
+test("detects a quick second tap near the first only once", () => {
+  const detector = createDoubleTapDetector();
+  const tap = (timeStamp, clientX = 0) => detector.tap({ timeStamp, clientX, clientY: 0 });
+  assert.equal(tap(0), false);
+  assert.equal(tap(200), true);
+  assert.equal(tap(300), false);
+  assert.equal(tap(1000), false);
+  assert.equal(tap(1100, 80), false);
 });
