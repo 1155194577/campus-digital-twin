@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { BoxGeometry, ConeGeometry, Mesh, PerspectiveCamera, Raycaster, Vector3 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { decodeCampusTerrain, pickCampusSurface, terrainCameraHeight, terrainHeight, terrainSegment, topTerrainLift } from "../lib/campus-terrain.ts";
+import { decodeCampusTerrain, pickCampusSurface, terrainCameraHeight, terrainHeight, terrainSegment, terrainTopTarget } from "../lib/campus-terrain.ts";
 
 test("terrain occludes a building behind it but not a building in front of it", () => {
   const ray = new Raycaster(new Vector3(0, 8, 20), new Vector3(0, 0, -1));
@@ -56,33 +56,33 @@ test("a close orbit on the CUHK hillside clears the terrain under the camera", (
   assert.equal(terrainCameraHeight(grid, 1000, 0, z), 0);
 });
 
-test("panning over high terrain in Top view does not change the zoom", () => {
+test("Top view clears the western ridge without changing zoom as it pans across the edge", () => {
   const bytes = readFileSync(new URL("../public/data/cuhk-terrain.bin", import.meta.url));
   const grid = decodeCampusTerrain(1765, 2054, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
   const camera = new PerspectiveCamera(), controls = new OrbitControls(camera);
   controls.minDistance = 40;
-  controls.target.set(-300, 64, -360);
+  controls.target.set(-875, terrainTopTarget(grid, controls.minDistance), 282.36);
   camera.position.copy(controls.target).add(new Vector3(0, 40, .01));
   controls.update();
   const zoom = camera.position.distanceTo(controls.target);
-  let lift = 0;
+  const altitude = camera.position.y;
   const pan = dx => {
     camera.position.x += dx;
     controls.target.x += dx;
     controls.update();
-    const { x, y, z } = camera.position;
-    const nextLift = topTerrainLift(grid, x, y, z, lift);
-    camera.position.y += nextLift - lift;
-    controls.target.y += nextLift - lift;
-    lift = nextLift;
+    assert.ok(Math.abs(camera.position.y - altitude) < 1e-6);
     assert.ok(Math.abs(camera.position.distanceTo(controls.target) - zoom) < 1e-6);
   };
-  pan(40);
-  assert.ok(lift > 0);
+  pan(-7.5);
   assert.ok(camera.position.y >= terrainHeight(grid, camera.position.x, camera.position.z) + 3);
-  pan(-40);
-  assert.equal(lift, 0);
-  assert.ok(Math.abs(camera.position.y - 104) < 1e-6);
+  pan(-.01);
+  pan(.01);
+  for (let i = 0; i < 4; i++) {
+    const priorAltitude = camera.position.y;
+    camera.position.sub(controls.target).multiplyScalar(1.3).add(controls.target);
+    controls.update();
+    assert.ok(camera.position.y > priorAltitude);
+  }
 });
 
 for (const [campus, columns, rows] of [["hkstp", 228, 224], ["cuhk", 354, 412]]) {

@@ -41,9 +41,9 @@ export function terrainCameraHeight(grid: CampusTerrain, x: number, y: number, z
   return Math.max(y, terrainHeight(grid, x, z) + 3);
 }
 
-export function topTerrainLift(grid: CampusTerrain, x: number, y: number, z: number, previousLift: number) {
-  const nominalY = y - previousLift;
-  return terrainCameraHeight(grid, x, nominalY, z) - nominalY;
+export function terrainTopTarget(grid: CampusTerrain, minDistance: number) {
+  const maxHeight = grid.heights.reduce((max, height) => Math.max(max, height), -Infinity);
+  return maxHeight + 4 - minDistance;
 }
 
 export function terrainSegment(grid: CampusTerrain, start: Point, end: Point): Point[] {

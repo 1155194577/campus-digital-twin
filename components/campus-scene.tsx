@@ -10,7 +10,7 @@ import type { CampusPlace, TransitPlace } from "@/lib/campus-places";
 import { partColors } from "@/lib/types";
 import type { Campus, Feature, Layers, ModelInfo, Point, UpAxis, ViewMode, ViewerAction } from "@/lib/types";
 import { campusFramePlanes, projectCampusFramePlane } from "@/lib/campus-frame";
-import { pickCampusSurface, terrainCameraHeight, terrainHeight, terrainSegment, topTerrainLift, type CampusTerrain } from "@/lib/campus-terrain";
+import { pickCampusSurface, terrainCameraHeight, terrainHeight, terrainSegment, terrainTopTarget, type CampusTerrain } from "@/lib/campus-terrain";
 import { createMapClickGesture } from "@/lib/map-click-gesture";
 import { cuhkBuildingRegion, cuhkRegions, type CuhkRegion } from "@/lib/cuhk-regions";
 
@@ -24,7 +24,7 @@ type SceneState = {
   setActive: (active: boolean) => void;
   view: ViewMode; perspectivePose?: CameraPose; topFrame?: CameraPose; campusBounds: THREE.Box3; modelBounds?: THREE.Box3;
   topSelectionTarget?: THREE.Vector3;
-  topLift: number;
+  topTerrainTarget?: number;
   updateTransitMarker?: () => void;
   heightAt: (x: number, z: number) => number;
 };
@@ -47,7 +47,7 @@ function fitTopView(s: SceneState) {
   s.camera.far = Math.max(s.span * 14, s.controls.maxDistance + size.y);
   s.camera.updateProjectionMatrix();
   bounds.getCenter(s.controls.target);
-  s.topLift = 0;
+  s.controls.target.y = s.topTerrainTarget ?? s.controls.target.y;
   s.camera.position.copy(s.controls.target).add(new THREE.Vector3(0, Math.max(s.controls.minDistance, distance), .01));
   s.focus = undefined;
   s.controls.update();
@@ -377,11 +377,11 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
         frame = undefined;
       }
     };
-    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial, invalidate, setActive, view: "perspective", campusBounds, heightAt, topLift: 0 };
+    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial, invalidate, setActive, view: "perspective", campusBounds, heightAt, topTerrainTarget: terrain && terrainTopTarget(terrain, controls.minDistance) };
     function render() {
       if (sceneState.focus) {
         const target = sceneState.focus.clone();
-        target.y += sceneState.topLift;
+        if (sceneState.view === "top") target.y = sceneState.topTerrainTarget ?? target.y;
         const delta = target.clone().sub(controls.target).multiplyScalar(.12);
         controls.target.add(delta); camera.position.add(delta);
         if (controls.target.distanceTo(target)<.1) sceneState.focus=undefined;
@@ -389,16 +389,7 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       const moved = controls.update();
       const { x, y, z } = camera.position;
       let heightAdjusted = false;
-      if (terrain && sceneState.view === "top") {
-        const lift = topTerrainLift(terrain, x, y, z, sceneState.topLift);
-        const delta = lift - sceneState.topLift;
-        if (Math.abs(delta) > 1e-6) {
-          sceneState.topLift = lift;
-          camera.position.y += delta;
-          controls.target.y += delta;
-          heightAdjusted = true;
-        }
-      } else if (terrain) {
+      if (terrain && sceneState.view !== "top") {
         const floor = terrainCameraHeight(terrain, x, y, z);
         if (y < floor) {
           camera.position.y = floor;
@@ -536,6 +527,7 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
     const distance=s.camera.position.distanceTo(s.controls.target);
     s.view = view;
     s.controls.enableRotate=view!=="top";
+    s.controls.screenSpacePanning=view!=="top"||!terrain;
     s.controls.mouseButtons.LEFT=view==="top"?THREE.MOUSE.PAN:THREE.MOUSE.ROTATE;
     s.controls.touches.ONE=view==="top"?THREE.TOUCH.PAN:THREE.TOUCH.ROTATE;
     if (view === "top") {
@@ -544,7 +536,6 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       fitTopView(s);
       return;
     }
-    s.topLift = 0;
     s.controls.maxDistance = s.span * 3.2;
     s.camera.far = s.span * 14;
     s.camera.updateProjectionMatrix();
@@ -605,7 +596,7 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
     const size = box.getSize(new THREE.Vector3());
     const radius = Math.max(110, Math.hypot(size.x, size.z) * .6) / (Math.tan(THREE.MathUtils.degToRad(s.camera.fov / 2)) * Math.min(1, s.camera.aspect));
     s.focus = undefined;
-    s.topLift = 0;
+    if (view === "top") center.y = s.topTerrainTarget ?? center.y;
     s.controls.target.copy(center);
     const offset = view === "top" ? new THREE.Vector3(0, radius, .01) : new THREE.Vector3(.5, .72, .65).normalize().multiplyScalar(radius);
     s.camera.position.copy(center).add(offset);
@@ -615,7 +606,7 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
   useEffect(()=>{
     const s=state.current; if(!s||!action||lastAction.current===action)return;
     lastAction.current=action;
-    if(action.type==="reset") {s.controls.target.set(0,s.heightAt(0,0),0); s.camera.position.copy(s.initial); s.focus=undefined; s.topLift=0;}
+    if(action.type==="reset") {s.controls.target.set(0,s.heightAt(0,0),0); s.camera.position.copy(s.initial); s.focus=undefined;}
     if(action.type==="zoomIn"||action.type==="zoomOut") {
       const offset=s.camera.position.clone().sub(s.controls.target).multiplyScalar(action.type==="zoomIn"?.75:1.3);
       offset.clampLength(s.controls.minDistance,s.controls.maxDistance); s.camera.position.copy(s.controls.target).add(offset);
@@ -625,8 +616,10 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       const mesh=transit?null:s.buildings.find(m=>m.userData.feature.id===selected.id);
       const center=transit?transitPosition(selected,campus,s.heightAt):mesh?new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()):null;
       if(center) {
-        const offset=transit?s.camera.position.clone().sub(s.controls.target).setLength(255):new THREE.Vector3(130,150,160);
-        s.controls.target.copy(center);s.camera.position.copy(center).add(offset);s.focus=undefined;s.topLift=0;
+        const topTarget = s.view === "top" ? s.topTerrainTarget : undefined;
+        center.y = topTarget ?? center.y;
+        const offset=topTarget!==undefined?new THREE.Vector3(0,255,.01):transit?s.camera.position.clone().sub(s.controls.target).setLength(255):new THREE.Vector3(130,150,160);
+        s.controls.target.copy(center);s.camera.position.copy(center).add(offset);s.focus=undefined;
       }
     }
     s.controls.update();
