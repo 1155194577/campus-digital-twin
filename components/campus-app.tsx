@@ -106,10 +106,10 @@ export default function CampusApp() {
     return ()=>controller.abort();
   },[campusId, locationReady]);
   const activeCampus = campus?.id === campusId ? campus : null;
-  const terrainAvailable=tab==="explore"&&!comparePrint&&!modelFiles.length;
+  const terrainAvailable=tab==="explore"&&!modelFiles.length;
   const terrain=terrainAvailable&&terrainEnabled&&terrainData&&terrainData.campus===activeCampus?terrainData.grid:undefined;
   useEffect(()=>{
-    if (!terrainAvailable || !terrainEnabled || !activeCampus || terrain) return;
+    if (!terrainAvailable || comparePrint || !terrainEnabled || !activeCampus || terrain) return;
     const controller=new AbortController();
     fetch(`/data/${activeCampus.id}-terrain.bin`,{signal:controller.signal}).then(response=>{
       if(!response.ok)throw new Error("Could not load terrain");
@@ -122,7 +122,7 @@ export default function CampusApp() {
       setError("Terrain elevation could not be loaded. The flat map is still available.");
     });
     return ()=>controller.abort();
-  },[activeCampus,terrain,terrainAvailable,terrainEnabled]);
+  },[activeCampus,comparePrint,terrain,terrainAvailable,terrainEnabled]);
   const isCuhk=activeCampus?.id==="cuhk";
   const showTransit=isCuhk&&!planning;
   const selected=(showTransit?transitPlaces.find(f=>f.id===selectedId):null)??activeCampus?.features.find(f=>f.id===selectedId)??null;
@@ -313,7 +313,7 @@ export default function CampusApp() {
             </div>
             <button ref={directoryToggle} className="icon-button mobile-directory-toggle" aria-label="Open campus directory" aria-controls="campus-directory" aria-expanded={mobileDirectory} onClick={()=>setMobileDirectory(true)}><Layers3 size={18}/></button>
           </div>
-          {terrainAvailable&&<div className="terrain-controls">
+          {terrainAvailable&&!printMode&&<div className="terrain-controls">
             <button type="button" className="secondary-button" aria-pressed={terrainEnabled} disabled={!activeCampus||loading} onClick={()=>setTerrainEnabled(enabled=>!enabled)}>Terrain elevation</button>
             {terrainEnabled&&!terrain&&<span role="status">Loading terrain…</span>}
             {terrain&&<a href="https://data.gov.hk/en-data/dataset/hk-landsd-openmap-5m-grid-dtm" target="_blank" rel="noreferrer">5 m DTM: Lands Department, HKSAR Government, via DATA.GOV.HK. © HKSAR Government and relevant organisations.</a>}
