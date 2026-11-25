@@ -221,6 +221,15 @@ export default function CampusScene({ campus, layers, selected, scheduledBuildin
     controls.maxPolarAngle = Math.PI / 2.15;
     controls.minDistance = 40; controls.maxDistance = span * 3.2;
     controls.zoomToCursor = true;
+    // OrbitControls measures pinch centres in page coordinates but the canvas in viewport coordinates.
+    type ZoomInternals = { _handleTouchMoveDolly(event: PointerEvent): void; _updateZoomParameters(x: number, y: number): void };
+    const zoomInternals = controls as unknown as ZoomInternals;
+    const pinchDolly = zoomInternals._handleTouchMoveDolly;
+    const updateZoom = zoomInternals._updateZoomParameters;
+    zoomInternals._handleTouchMoveDolly = function (this: ZoomInternals, event) {
+      this._updateZoomParameters = (x, y) => updateZoom.call(this, x - window.scrollX, y - window.scrollY);
+      try { pinchDolly.call(this, event); } finally { this._updateZoomParameters = updateZoom; }
+    };
     scene.add(new THREE.HemisphereLight(0xffffff, 0x849c9a, 2.2));
     const sun = new THREE.DirectionalLight(0xfff6e8, 3.2);
     sun.position.set(-600,1000,300); scene.add(sun);
