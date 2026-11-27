@@ -31,6 +31,7 @@ const initialCampusId = "hkstp";
 const campuses = [{id:"hkstp",short:"HKSTP",label:"HKSTP campus",name:"Hong Kong Science Park",tag:"Science & innovation"},{id:"cuhk",short:"CUHK",label:"CUHK campus",name:"The Chinese University of Hong Kong",tag:"Education & research"},{id:combinedCampusId,short:"HKSTP + CUHK",label:"HKSTP + CUHK combined",name:"Hong Kong Science Park and CUHK",tag:"Joined view"}];
 const loadCampus = (id:string, signal:AbortSignal):Promise<Campus> => fetch(`/data/${id}.json`,{signal}).then(r=>{if(!r.ok)throw new Error("Campus data could not be loaded. Please try again.");return r.json();});
 const layerOptions = [{key:"building",name:"Buildings",icon:Building2,color:"#b7c7cd"},{key:"road",name:"Roads & pathways",icon:Map,color:"#c2c9c3"},{key:"park",name:"Green spaces",icon:Leaf,color:"#92b79d"},{key:"water",name:"Water bodies",icon:Waves,color:"#8abcc6"}] as const;
+const photoCovered = new Set<string>(["park","water"]);
 const transitPlaces = [universityStation,...universityExits];
 const regionKeys = Object.keys(cuhkRegions) as CuhkRegion[];
 
@@ -129,6 +130,8 @@ export default function CampusApp() {
     return ()=>controller.abort();
   },[activeCampus,comparePrint,terrain,terrainAvailable,terrainEnabled]);
   const groundImage=terrainAvailable&&aerialEnabled&&aerialData&&aerialData.campus===activeCampus?aerialData.image:undefined;
+  const sceneLayers=useMemo(()=>groundImage?{...layers,park:false,water:false}:layers,[groundImage,layers]);
+
   useEffect(()=>{
     if (!terrainAvailable || comparePrint || !aerialEnabled || !activeCampus || groundImage) return;
     let cancelled=false,decoded=false;
@@ -148,7 +151,6 @@ export default function CampusApp() {
   const chooseGround=(aerial:boolean)=>{
     if(aerial===aerialEnabled)return;
     setAerialEnabled(aerial);
-    setLayers(previous=>({...previous,park:!aerial,water:!aerial}));
   };
   const isCuhk=activeCampus?.id==="cuhk";
   const showTransit=isCuhk&&!planning;
@@ -304,7 +306,7 @@ export default function CampusApp() {
           <div className="directory-tabs"><button className={tab==="explore"?"selected":""} aria-pressed={tab==="explore"} onClick={()=>{setTab("explore");setModelFiles([]);}}>Explore campus</button><button className={tab==="models"?"selected":""} aria-pressed={tab==="models"} onClick={()=>setTab("models")}>My models</button></div>
           {tab==="explore"?<>
             <div className="layer-heading"><h2>Map layers</h2><SlidersHorizontal size={15}/></div>
-            <div className="layers">{layerOptions.map(({key,name,icon:Icon,color})=><label className="layer-row" key={key}><span className="layer-symbol" style={{color}}><Icon size={17}/></span><span>{name}</span><input type="checkbox" checked={layers[key]} onChange={e=>setLayers({...layers,[key]:e.target.checked})}/><span className="custom-check">{layers[key]&&<Check size={12}/>}</span></label>)}</div>
+            <div className="layers">{layerOptions.map(({key,name,icon:Icon,color})=><label className="layer-row" key={key}><span className="layer-symbol" style={{color}}><Icon size={17}/></span><span>{name}</span><input type="checkbox" checked={layers[key]} disabled={Boolean(groundImage)&&photoCovered.has(key)} title={groundImage&&photoCovered.has(key)?"Shown by the aerial photo":undefined} onChange={e=>setLayers({...layers,[key]:e.target.checked})}/><span className="custom-check">{layers[key]&&<Check size={12}/>}</span></label>)}</div>
             <div className="directory-rule"/>
             <div className="layer-heading"><h2>{isCuhk?"Places directory":"Building directory"}</h2><span className="count">{places.length}</span></div>
             <div className="search-field"><Search size={15}/><input ref={search} value={query} onChange={e=>setQuery(e.target.value)} placeholder={`${searchLabel}…`} aria-label={searchLabel}/>{query&&<button onClick={()=>{setQuery("");search.current?.focus();}} aria-label="Clear search"><X size={13}/></button>}</div>
@@ -364,7 +366,7 @@ export default function CampusApp() {
             {showPrint&&<PrintComparison campus={campus} layers={layers} selected={selected&&!isTransitPlace(selected)?selected:null}/>}
             <div className="campus-map-view" hidden={Boolean(showPrint)}>
               <div className="map-surface" ref={mapSurface}>
-                <CampusScene campus={loading?null:activeCampus} terrain={terrain} groundImage={groundImage} layers={layers} selected={planning?null:selected} scheduledBuildings={showTimetable?scheduledBuildings:undefined} colorRegions={showRegions} highlightedRegion={highlightedRegion} showTransit={showTransit&&tab==="explore"} onSelect={select} onMapPoint={!showPrint&&planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFiles={modelFiles} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready} onModelInfo={setModelInfo} onHeadingChange={showNorthHeading}/>
+                <CampusScene campus={loading?null:activeCampus} terrain={terrain} groundImage={groundImage} layers={sceneLayers} selected={planning?null:selected} scheduledBuildings={showTimetable?scheduledBuildings:undefined} colorRegions={showRegions} highlightedRegion={highlightedRegion} showTransit={showTransit&&tab==="explore"} onSelect={select} onMapPoint={!showPrint&&planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFiles={modelFiles} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready} onModelInfo={setModelInfo} onHeadingChange={showNorthHeading}/>
                 {(loading||!sceneReady)&&!error&&<div className="loading-overlay" role="status"><LoaderCircle className="spin" size={28}/><strong>{modelFiles.length?"Opening your model":"Bringing campus into focus"}</strong><span>Preparing your 3D view…</span></div>}
                 {error&&<div className="error-banner" role="alert"><Info size={17}/><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError("")}><X size={16}/></button></div>}
                 <div className="map-title"><span className="map-kicker">{modelFiles.length?"LOCAL MODEL":"CAMPUS DIGITAL TWIN"}</span><h2 id="map-title">{modelName??current.name}</h2><p className="map-subtitle">{modelFiles.length?"Your geometry. A different perspective.":campus?.subtitle}</p><p className="touch-hint">{view==="top"?"Drag to pan · Pinch to zoom · Double-tap to zoom in":modelFiles.length?"Drag to orbit · Pinch to zoom · Two fingers to pan":"Drag to pan · Pinch to zoom · Two fingers to rotate"}</p></div>
