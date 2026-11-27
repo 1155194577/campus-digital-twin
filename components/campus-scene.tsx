@@ -28,7 +28,11 @@ type SceneState = {
   topTerrainLevels?: (x: number, z: number) => ReturnType<typeof terrainTopLevels>;
   updateTransitMarker?: () => void;
   heightAt: (x: number, z: number) => number;
+  groundMaterial: THREE.MeshStandardMaterial;
 };
+
+const groundColor = "#dce8dc";
+const aerialTint = "#c4c4c4";
 
 function getCameraPose(s: SceneState): CameraPose {
   return { position: s.camera.position.clone(), target: s.controls.target.clone() };
@@ -224,9 +228,10 @@ function fitModel(s: SceneState, upAxis: UpAxis): ModelInfo | null {
   return { parts: pivot.children.length, triangles: Math.round(triangles), size: [size.x, size.z, size.y].map(v => v < maxSize * 1e-9 ? 0 : v) as ModelInfo["size"] };
 }
 
-export default function CampusScene({ campus, terrain, layers, selected, scheduledBuildings, colorRegions, highlightedRegion, showTransit, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFiles, upAxis, active, onError, onModelError, onReady, onModelInfo, onHeadingChange }: {
+export default function CampusScene({ campus, terrain, groundImage, layers, selected, scheduledBuildings, colorRegions, highlightedRegion, showTransit, onSelect, onMapPoint, routeStart, routeDestination, routePath, view, action, modelFiles, upAxis, active, onError, onModelError, onReady, onModelInfo, onHeadingChange }: {
   campus: Campus; layers: Layers; selected: CampusPlace | null; showTransit: boolean; onSelect: (f: CampusPlace | null) => void;
   terrain?: CampusTerrain;
+  groundImage?: HTMLImageElement;
   scheduledBuildings?: ReadonlySet<string>;
   colorRegions: boolean; highlightedRegion: CuhkRegion | null;
   onMapPoint?: (point: Point) => void; routeStart?: Point; routeDestination?: Point; routePath?: Point[];
@@ -306,11 +311,15 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
     const groundTop = -1;
     const groundThickness = 8;
     const relief = terrain && terrainGeometry(terrain);
-    const ground = new THREE.Mesh(relief || new THREE.BoxGeometry(campus.width, groundThickness, campus.depth), new THREE.MeshStandardMaterial({ color: "#dce8dc", roughness: 1 }));
+    const groundMaterial = new THREE.MeshStandardMaterial({ color: groundColor, roughness: 1 });
+    const groundSide = new THREE.MeshStandardMaterial({ color: groundColor, roughness: 1 });
+    const ground = relief ? new THREE.Mesh(relief, groundMaterial)
+      // Only the box's top face (+y, material index 2) carries the aerial photo.
+      : new THREE.Mesh(new THREE.BoxGeometry(campus.width, groundThickness, campus.depth), [groundSide, groundSide, groundMaterial, groundSide, groundSide, groundSide]);
     if (terrain) {
       ground.renderOrder = -1;
-      ground.material.stencilRef = 1;
-      ground.material.stencilZPass = THREE.ReplaceStencilOp;
+      groundMaterial.stencilRef = 1;
+      groundMaterial.stencilZPass = THREE.ReplaceStencilOp;
     } else ground.position.y = groundTop - groundThickness / 2;
     scene.add(ground);
     const terrainClippedMaterials: THREE.Material[] = [];
@@ -442,7 +451,7 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
       }
     };
     const topTerrainLevelsAt = terrain && ((x: number, z: number) => terrainTopLevels(terrain, terrainRoofs, x, z, controls.minDistance));
-    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial, invalidate, setActive, view: "perspective", campusBounds, maxDistance: controls.maxDistance, heightAt, topTerrainLevels: topTerrainLevelsAt };
+    const sceneState: SceneState = { scene, camera, renderer, controls, groups, buildings, model, route, span, initial, invalidate, setActive, view: "perspective", campusBounds, maxDistance: controls.maxDistance, heightAt, topTerrainLevels: topTerrainLevelsAt, groundMaterial };
     const flightPose: CameraPose = { position: new THREE.Vector3(), target: new THREE.Vector3() };
     function render() {
       const flight = sceneState.flight;
@@ -481,7 +490,7 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
         }
         const clipTerrainOutline = Boolean(terrain && sceneState.view === "top");
         if (clipTerrainOutline !== terrainOutlineClipped) {
-          ground.material.stencilWrite = clipTerrainOutline;
+          groundMaterial.stencilWrite = clipTerrainOutline;
           terrainClippedMaterials.forEach(material => { material.stencilWrite = clipTerrainOutline; });
           terrainOutlineClipped = clipTerrainOutline;
         }
@@ -570,6 +579,27 @@ export default function CampusScene({ campus, terrain, layers, selected, schedul
   }, [campus, terrain]);
 
   useEffect(() => { state.current?.setActive(active); }, [active, campus, terrain]);
+  useEffect(() => {
+    const s = state.current;
+    if (!s || !groundImage) return;
+    const material = s.groundMaterial;
+    const map = new THREE.Texture(groundImage);
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.anisotropy = s.renderer.capabilities.getMaxAnisotropy();
+    map.needsUpdate = true;
+    material.map = map;
+    material.color.set(aerialTint);
+    material.needsUpdate = true;
+    s.invalidate();
+    return () => {
+      map.dispose();
+      if (material.map !== map) return;
+      material.map = null;
+      material.color.set(groundColor);
+      material.needsUpdate = true;
+      s.invalidate();
+    };
+  }, [groundImage, campus, terrain]);
   useEffect(() => {
     const s=state.current; if(!s)return;
     for(const key of Object.keys(layers) as (keyof Layers)[]) s.groups[key].visible=layers[key] && !modelFiles.length;

@@ -16,6 +16,10 @@ The tactile reference images in `public/data/*-print.webp` also derive from Open
 
 The campus terrain grids (`public/data/*-terrain.bin`) are resampled from the [5 m Digital Terrain Model](https://data.gov.hk/en-data/dataset/hk-landsd-openmap-5m-grid-dtm), separate from the OpenStreetMap snapshots. Source: Lands Department, Government of the Hong Kong Special Administrative Region, via DATA.GOV.HK. © Government of the Hong Kong Special Administrative Region and the relevant organisations. The source and grids are subject to the [DATA.GOV.HK Terms of Use](https://data.gov.hk/en/terms-and-conditions).
 
+## Aerial ground
+
+The aerial ground images (`public/data/*-aerial.webp`) are cropped and resampled to about 0.5 m per pixel from the 2025 [True Digital Orthophoto](https://portal.csdi.gov.hk/geoportal/?datasetId=landsd_rcd_1701762716904_4826) sheets T7-NE-C and T7-SE-A (0.25 m, Hong Kong 1980 Grid) with `scripts/prepare_aerial.py`. Source: CSDI Portal, Lands Department, Government of the Hong Kong SAR. © Government of the Hong Kong SAR and the relevant organisations. The source and images are subject to the [CSDI terms](https://portal.csdi.gov.hk/csdi-webpage/doc/TNC).
+
 ## CUHK directory supplements
 
 - [University Station](https://www.openstreetmap.org/node/5098496689) is an OpenStreetMap point and uses the same ODbL attribution.
