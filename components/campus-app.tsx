@@ -31,6 +31,7 @@ const initialCampusId = "hkstp";
 const campuses = [{id:"hkstp",short:"HKSTP",label:"HKSTP campus",name:"Hong Kong Science Park",tag:"Science & innovation"},{id:"cuhk",short:"CUHK",label:"CUHK campus",name:"The Chinese University of Hong Kong",tag:"Education & research"},{id:combinedCampusId,short:"HKSTP + CUHK",label:"HKSTP + CUHK combined",name:"Hong Kong Science Park and CUHK",tag:"Joined view"}];
 const loadCampus = (id:string, signal:AbortSignal):Promise<Campus> => fetch(`/data/${id}.json`,{signal}).then(r=>{if(!r.ok)throw new Error("Campus data could not be loaded. Please try again.");return r.json();});
 const layerOptions = [{key:"building",name:"Buildings",icon:Building2,color:"#b7c7cd"},{key:"road",name:"Roads & pathways",icon:Map,color:"#c2c9c3"},{key:"park",name:"Green spaces",icon:Leaf,color:"#92b79d"},{key:"water",name:"Water bodies",icon:Waves,color:"#8abcc6"}] as const;
+const photoCovered = new Set<string>(["park","water"]);
 const transitPlaces = [universityStation,...universityExits];
 const regionKeys = Object.keys(cuhkRegions) as CuhkRegion[];
 
@@ -60,6 +61,8 @@ export default function CampusApp() {
   const [view,setView]=useState<ViewMode>("perspective");
   const [terrainEnabled,setTerrainEnabled]=useState(false);
   const [terrainData,setTerrainData]=useState<{campus:Campus; grid:CampusTerrain}>();
+  const [aerialEnabled,setAerialEnabled]=useState(false);
+  const [aerialData,setAerialData]=useState<{campus:Campus; image:HTMLImageElement}>();
   const [comparePrint,setComparePrint]=useState(false);
   useEffect(()=>{ if(!hasPrintReference(campusId)) setComparePrint(false); },[campusId]);
   const [action,setAction]=useState<ViewerAction|null>(null);
@@ -126,6 +129,29 @@ export default function CampusApp() {
     });
     return ()=>controller.abort();
   },[activeCampus,comparePrint,terrain,terrainAvailable,terrainEnabled]);
+  const groundImage=terrainAvailable&&aerialEnabled&&aerialData&&aerialData.campus===activeCampus?aerialData.image:undefined;
+  const sceneLayers=useMemo(()=>groundImage?{...layers,park:false,water:false}:layers,[groundImage,layers]);
+
+  useEffect(()=>{
+    if (!terrainAvailable || comparePrint || !aerialEnabled || !activeCampus || groundImage) return;
+    let cancelled=false,decoded=false;
+    const image=new Image();
+    image.decoding="async";
+    image.src=`/data/${activeCampus.id}-aerial.webp`;
+    image.decode().then(()=>{
+      decoded=true;
+      if(!cancelled)setAerialData({campus:activeCampus,image});
+    }).catch(()=>{
+      if(cancelled)return;
+      setAerialEnabled(false);
+      setError("The aerial photo could not be loaded. The grey ground is still available.");
+    });
+    return ()=>{cancelled=true;if(!decoded)image.src="";};
+  },[activeCampus,comparePrint,groundImage,terrainAvailable,aerialEnabled]);
+  const chooseGround=(aerial:boolean)=>{
+    if(aerial===aerialEnabled)return;
+    setAerialEnabled(aerial);
+  };
   const isCuhk=activeCampus?.id==="cuhk";
   const showTransit=isCuhk&&!planning;
   const selected=(showTransit?transitPlaces.find(f=>f.id===selectedId):null)??activeCampus?.features.find(f=>f.id===selectedId)??null;
@@ -280,7 +306,7 @@ export default function CampusApp() {
           <div className="directory-tabs"><button className={tab==="explore"?"selected":""} aria-pressed={tab==="explore"} onClick={()=>{setTab("explore");setModelFiles([]);}}>Explore campus</button><button className={tab==="models"?"selected":""} aria-pressed={tab==="models"} onClick={()=>setTab("models")}>My models</button></div>
           {tab==="explore"?<>
             <div className="layer-heading"><h2>Map layers</h2><SlidersHorizontal size={15}/></div>
-            <div className="layers">{layerOptions.map(({key,name,icon:Icon,color})=><label className="layer-row" key={key}><span className="layer-symbol" style={{color}}><Icon size={17}/></span><span>{name}</span><input type="checkbox" checked={layers[key]} onChange={e=>setLayers({...layers,[key]:e.target.checked})}/><span className="custom-check">{layers[key]&&<Check size={12}/>}</span></label>)}</div>
+            <div className="layers">{layerOptions.map(({key,name,icon:Icon,color})=><label className="layer-row" key={key}><span className="layer-symbol" style={{color}}><Icon size={17}/></span><span>{name}</span><input type="checkbox" checked={layers[key]} disabled={Boolean(groundImage)&&photoCovered.has(key)} title={groundImage&&photoCovered.has(key)?"Shown by the aerial photo":undefined} onChange={e=>setLayers({...layers,[key]:e.target.checked})}/><span className="custom-check">{layers[key]&&<Check size={12}/>}</span></label>)}</div>
             <div className="directory-rule"/>
             <div className="layer-heading"><h2>{isCuhk?"Places directory":"Building directory"}</h2><span className="count">{places.length}</span></div>
             <div className="search-field"><Search size={15}/><input ref={search} value={query} onChange={e=>setQuery(e.target.value)} placeholder={`${searchLabel}…`} aria-label={searchLabel}/>{query&&<button onClick={()=>{setQuery("");search.current?.focus();}} aria-label="Clear search"><X size={13}/></button>}</div>
@@ -320,7 +346,14 @@ export default function CampusApp() {
           {terrainAvailable&&!printMode&&<div className="terrain-controls">
             <button type="button" className="secondary-button" aria-pressed={terrainEnabled} disabled={!activeCampus||loading} onClick={()=>setTerrainEnabled(enabled=>!enabled)}>Terrain elevation</button>
             {terrainEnabled&&!terrain&&<span role="status">Loading terrain…</span>}
+            <div className="ground-switch" role="group" aria-label="Ground">
+              <span>Ground</span>
+              <button type="button" className="secondary-button" aria-pressed={!aerialEnabled} disabled={!activeCampus||loading} onClick={()=>chooseGround(false)}>Flat grey</button>
+              <button type="button" className="secondary-button" aria-pressed={aerialEnabled} disabled={!activeCampus||loading} onClick={()=>chooseGround(true)}>Aerial photo</button>
+            </div>
+            {aerialEnabled&&!groundImage&&<span role="status">Loading aerial photo…</span>}
             {terrain&&<a href="https://data.gov.hk/en-data/dataset/hk-landsd-openmap-5m-grid-dtm" target="_blank" rel="noreferrer">5 m DTM: Lands Department, HKSAR Government, via DATA.GOV.HK. © HKSAR Government and relevant organisations.</a>}
+            {groundImage&&<a href="https://portal.csdi.gov.hk/geoportal/?datasetId=landsd_rcd_1701762716904_4826" target="_blank" rel="noreferrer">Aerial photo: True Digital Orthophoto 2025, Lands Department, via CSDI Portal. © HKSAR Government and relevant organisations.</a>}
           </div>}
           {showRegions&&<div className="college-regions" role="group" aria-label="CUHK building regions">
             <strong>Building regions</strong>
@@ -333,7 +366,7 @@ export default function CampusApp() {
             {showPrint&&<PrintComparison campus={campus} layers={layers} selected={selected&&!isTransitPlace(selected)?selected:null}/>}
             <div className="campus-map-view" hidden={Boolean(showPrint)}>
               <div className="map-surface" ref={mapSurface}>
-                <CampusScene campus={loading?null:activeCampus} terrain={terrain} layers={layers} selected={planning?null:selected} scheduledBuildings={showTimetable?scheduledBuildings:undefined} colorRegions={showRegions} highlightedRegion={highlightedRegion} showTransit={showTransit&&tab==="explore"} onSelect={select} onMapPoint={!showPrint&&planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFiles={modelFiles} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready} onModelInfo={setModelInfo} onHeadingChange={showNorthHeading}/>
+                <CampusScene campus={loading?null:activeCampus} terrain={terrain} groundImage={groundImage} layers={sceneLayers} selected={planning?null:selected} scheduledBuildings={showTimetable?scheduledBuildings:undefined} colorRegions={showRegions} highlightedRegion={highlightedRegion} showTransit={showTransit&&tab==="explore"} onSelect={select} onMapPoint={!showPrint&&planning&&tab==="explore"?onMapPoint:undefined} routeStart={planning&&tab==="explore"?start?.point:undefined} routeDestination={planning&&tab==="explore"?destination?.point:undefined} routePath={planning&&tab==="explore"?route?.points:undefined} view={view} action={action} modelFiles={modelFiles} upAxis={upAxis} active={!showPrint} onError={showError} onModelError={clearFailedModel} onReady={ready} onModelInfo={setModelInfo} onHeadingChange={showNorthHeading}/>
                 {(loading||!sceneReady)&&!error&&<div className="loading-overlay" role="status"><LoaderCircle className="spin" size={28}/><strong>{modelFiles.length?"Opening your model":"Bringing campus into focus"}</strong><span>Preparing your 3D view…</span></div>}
                 {error&&<div className="error-banner" role="alert"><Info size={17}/><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError("")}><X size={16}/></button></div>}
                 <div className="map-title"><span className="map-kicker">{modelFiles.length?"LOCAL MODEL":"CAMPUS DIGITAL TWIN"}</span><h2 id="map-title">{modelName??current.name}</h2><p className="map-subtitle">{modelFiles.length?"Your geometry. A different perspective.":campus?.subtitle}</p><p className="touch-hint">{view==="top"?"Drag to pan · Pinch to zoom · Double-tap to zoom in":modelFiles.length?"Drag to orbit · Pinch to zoom · Two fingers to pan":"Drag to pan · Pinch to zoom · Two fingers to rotate"}</p></div>
@@ -372,6 +405,6 @@ export default function CampusApp() {
       <footer className="page-footer"><span>Connected places. New possibilities.</span><span>Next.js <i/> Three.js <button onClick={showInfo}>About the data<ArrowUpRight size={12}/></button></span></footer>
     </div>
     <input ref={upload} className="hidden-input" type="file" accept=".stl,.glb" multiple aria-label="Upload 3D model" onChange={e=>{chooseModels(e.target.files);e.target.value="";}}/>
-    <dialog ref={aboutDialog} className="modal-backdrop" aria-labelledby="about-title" onClick={e=>{if(e.target===e.currentTarget)closeInfo();}}><section className="info-modal"><div className="modal-heading"><Layers3 size={23}/><button className="icon-button" aria-label="Close about dialog" onClick={closeInfo}><X size={20}/></button></div><div className="eyebrow">A SHARED VIEW OF PLACE</div><h2 id="about-title">Welcome to Campus Atlas.</h2><p>A geographic digital twin of Hong Kong Science Park and the CUHK campus, built with Next.js and Three.js.</p><h3>Real geography. Honest detail.</h3><p>Buildings, roads, green spaces and water are snapshots from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>, licensed under ODbL. Heights use mapped values where available, otherwise building levels × 3.5 m or a 14 m default. The snapshot does not model terrain elevation, complex multipolygon holes or unclosed rings.</p><h3>Your own models</h3><p>Open local STL or self-contained GLB files from My models. Files are processed on your device, never uploaded. There is no live telemetry, scan backend or print dispatch connected.</p><div className="modal-links"><a href="https://github.com/1155194577/py-touch-mapper-hk" target="_blank" rel="noreferrer">Map project<ArrowUpRight size={14}/></a><a href="https://github.com/1155194577/3d-print" target="_blank" rel="noreferrer">3D print project<ArrowUpRight size={14}/></a></div><button className="primary-button" onClick={closeInfo}>Explore the campus<ChevronRight size={15}/></button></section></dialog>
+    <dialog ref={aboutDialog} className="modal-backdrop" aria-labelledby="about-title" onClick={e=>{if(e.target===e.currentTarget)closeInfo();}}><section className="info-modal"><div className="modal-heading"><Layers3 size={23}/><button className="icon-button" aria-label="Close about dialog" onClick={closeInfo}><X size={20}/></button></div><div className="eyebrow">A SHARED VIEW OF PLACE</div><h2 id="about-title">Welcome to Campus Atlas.</h2><p>A geographic digital twin of Hong Kong Science Park and the CUHK campus, built with Next.js and Three.js.</p><h3>Real geography. Honest detail.</h3><p>Buildings, roads, green spaces and water are snapshots from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>, licensed under ODbL. Heights use mapped values where available, otherwise building levels × 3.5 m or a 14 m default. The snapshot does not model complex multipolygon holes or unclosed rings. Optional terrain and aerial ground use the Lands Department 5 m DTM and True Digital Orthophoto.</p><h3>Your own models</h3><p>Open local STL or self-contained GLB files from My models. Files are processed on your device, never uploaded. There is no live telemetry, scan backend or print dispatch connected.</p><div className="modal-links"><a href="https://github.com/1155194577/py-touch-mapper-hk" target="_blank" rel="noreferrer">Map project<ArrowUpRight size={14}/></a><a href="https://github.com/1155194577/3d-print" target="_blank" rel="noreferrer">3D print project<ArrowUpRight size={14}/></a></div><button className="primary-button" onClick={closeInfo}>Explore the campus<ChevronRight size={15}/></button></section></dialog>
   </div>;
 }
